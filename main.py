@@ -14,6 +14,10 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+# 获取证书信息的库
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+
 # 初始化 Rich 控制台，强制使用 UTF-8
 console = Console(force_terminal=True)
 
@@ -51,6 +55,34 @@ def run_mkcert(args):
         console.print(f"[bold red]发生未知错误:[/bold red] {str(e)}")
         return None
 
+def get_ca_info():
+    """
+    获取 mkcert CA 的根目录路径和有效期
+    """
+    ca_root = run_mkcert(["-CAROOT"])
+    if not ca_root:
+        return None
+    
+    ca_path = Path(ca_root.strip()) / "rootCA.pem"
+    if not ca_path.exists():
+        return {"path": str(ca_path), "error": "文件不存在"}
+    
+    try:
+        cert_data = ca_path.read_bytes()
+        cert = x509.load_pem_x509_certificate(cert_data, default_backend())
+        # 兼容不同版本的 cryptography
+        try:
+            expiration = cert.not_valid_after_utc
+        except AttributeError:
+            expiration = cert.not_valid_after
+            
+        return {
+            "path": str(ca_path),
+            "expiration": expiration.strftime("%Y-%m-%d %H:%M:%S")
+        }
+    except Exception as e:
+        return {"path": str(ca_path), "error": str(e)}
+
 def main():
     # 清理屏幕并显示欢迎信息
     console.clear()
@@ -69,11 +101,28 @@ def main():
         cert_dir.mkdir(parents=True)
         console.print(f"[bold green]Created:[/bold green] 证书目录 [blue]{cert_dir}[/blue]")
 
-    # 2. 检查/安装 CA
-    with console.status("[bold yellow]正在初始化本地 CA 环境 (mkcert -install)...[/bold yellow]", spinner="dots"):
-        install_info = run_mkcert(["-install"])
-        if install_info:
-            console.print("[bold green]✓[/bold green] 本地信任 CA 已检查/安装完毕")
+    # 2. 检查/安装 CA 并显示信息
+    with console.status("[bold yellow]正在初始化并检查本地 CA 状态...[/bold yellow]", spinner="dots"):
+        run_mkcert(["-install"])
+        ca_info = get_ca_info()
+
+    if ca_info:
+        if "error" in ca_info:
+            console.print(f"[bold yellow]⚠ CA 检查异常:[/bold yellow] {ca_info['error']}")
+        else:
+            ca_table = Table(show_header=False, box=None, padding=(0, 2))
+            ca_table.add_row("[dim]CA 根目录:[/dim]", f"[blue]{ca_info['path']}[/blue]")
+            ca_table.add_row("[dim]CA 有效期至:[/dim]", f"[green]{ca_info['expiration']}[/green]")
+            
+            console.print(Panel(
+                ca_table,
+                title="[bold green]✓ 本地信任 CA 已就绪[/bold green]",
+                title_align="left",
+                border_style="green",
+                expand=False
+            ))
+    else:
+        console.print("[bold red]❌ 无法获取 CA 信息[/bold red]")
 
     # 3. 获取用户输入的域名
     console.print("\n[bold]请输入要申请证书的域名：[/bold]")
