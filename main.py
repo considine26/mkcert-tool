@@ -9,7 +9,7 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
@@ -84,45 +84,43 @@ def get_ca_info():
         return {"path": str(ca_path), "error": str(e)}
 
 def main():
-    # 清理屏幕并显示欢迎信息
-    console.clear()
-    console.print(Panel.fit(
-        "[bold bright_cyan]🛡️  Mkcert 证书自动化申请工具[/bold bright_cyan]\n"
-        "[dim]基于 Python + Rich + UV 构建[/dim]",
-        border_style="bright_blue",
-        padding=(1, 2)
-    ))
-
     # 1. 证书存放目录设置
     base_path = Path(__file__).parent
     cert_dir = base_path / "certs"
-    
     if not cert_dir.exists():
         cert_dir.mkdir(parents=True)
-        console.print(f"[bold green]Created:[/bold green] 证书目录 [blue]{cert_dir}[/blue]")
 
-    # 2. 检查/安装 CA 并显示信息
+    # 2. 检查/安装 CA 并获取信息 (静默处理)
     with console.status("[bold yellow]正在初始化并检查本地 CA 状态...[/bold yellow]", spinner="dots"):
         run_mkcert(["-install"])
         ca_info = get_ca_info()
 
+    # 3. 清理屏幕并显示合并后的欢迎面板
+    console.clear()
+    
+    header_content = (
+        "[bold bright_cyan]🛡️  Mkcert 证书自动化申请工具[/bold bright_cyan]\n"
+        "[dim]基于 Python + Rich + UV 构建[/dim]\n"
+    )
+
+    info_table = Table(show_header=False, box=None, padding=(0, 2))
+    info_table.add_row("[dim]证书输出目录:[/dim]", f"[blue]{cert_dir.absolute()}[/blue]")
+    
     if ca_info:
         if "error" in ca_info:
-            console.print(f"[bold yellow]⚠ CA 检查异常:[/bold yellow] {ca_info['error']}")
+            info_table.add_row("[dim]CA 状态:[/dim]", f"[bold yellow]检查异常 ({ca_info['error']})[/bold yellow]")
         else:
-            ca_table = Table(show_header=False, box=None, padding=(0, 2))
-            ca_table.add_row("[dim]CA 根目录:[/dim]", f"[blue]{ca_info['path']}[/blue]")
-            ca_table.add_row("[dim]CA 有效期至:[/dim]", f"[green]{ca_info['expiration']}[/green]")
-            
-            console.print(Panel(
-                ca_table,
-                title="[bold green]✓ 本地信任 CA 已就绪[/bold green]",
-                title_align="left",
-                border_style="green",
-                expand=False
-            ))
+            info_table.add_row("[dim]CA 根目录:[/dim]", f"[blue]{ca_info['path']}[/blue]")
+            info_table.add_row("[dim]CA 有效期至:[/dim]", f"[green]{ca_info['expiration']}[/green]")
     else:
-        console.print("[bold red]❌ 无法获取 CA 信息[/bold red]")
+        info_table.add_row("[dim]CA 状态:[/dim]", "[bold red]未找到[/bold red]")
+
+    console.print(Panel(
+        Group(header_content, info_table),
+        border_style="bright_blue",
+        padding=(1, 2),
+        expand=False
+    ))
 
     # 3. 获取用户输入的域名
     console.print("\n[bold]请输入要申请证书的域名：[/bold]")
