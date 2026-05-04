@@ -114,21 +114,58 @@ def list_certificates(cert_dir):
 
     # 3. 构造表格
     table = Table(show_header=True, header_style="bold magenta", box=None)
+    table.add_column("序号", style="dim", justify="center")
     table.add_column("证书文件名", style="blue")
     table.add_column("包含域名", style="white")
     table.add_column("过期时间", style="green")
     table.add_column("剩余天数", justify="right")
 
-    for c in parsed_certs:
+    for idx, c in enumerate(parsed_certs, 1):
         day_style = "green" if c["days_left"] > 30 else ("yellow" if c["days_left"] > 7 else "bold red")
-        
-        # 处理解析失败的占位显示
         exp_str = c["expiration"].strftime("%Y-%m-%d") if c["days_left"] != 999999 else "N/A"
         days_str = f"[{day_style}]{c['days_left']} 天[/{day_style}]" if c["days_left"] != 999999 else "N/A"
-            
-        table.add_row(c["name"], c["domains"], exp_str, days_str)
+        table.add_row(str(idx), c["name"], c["domains"], exp_str, days_str)
             
     console.print(table)
+
+    # 4. 快速续期交互
+    renew_idx = Prompt.ask("\n输入 [bold cyan]序号[/bold cyan] 快速续期 (默认 10 年，直接回车返回)")
+    if not renew_idx or not renew_idx.isdigit():
+        return
+
+    idx = int(renew_idx) - 1
+    if 0 <= idx < len(parsed_certs):
+        target = parsed_certs[idx]
+        if target["days_left"] == 999999:
+            console.print("[red]错误：无法对解析失败的证书进行续期。[/red]")
+            return
+        
+        # 提取域名
+        domains = [d.strip() for d in target["domains"].split(",")]
+        
+        # 构建续期参数 (默认给 10 年)
+        cert_file = cert_dir / target["name"]
+        # 尝试推断 key 文件名 (通常是 certname-key.pem)
+        key_name = target["name"].replace(".pem", "-key.pem")
+        key_file = cert_dir / key_name
+
+        console.print(f"\n[bold magenta]正在为 {target['name']} 进行续期...[/bold magenta]")
+        
+        args = [
+            "-cert-days=3650",
+            "-cert-file", str(cert_file),
+            "-key-file", str(key_file)
+        ] + domains
+        
+        with console.status("[bold green]正在重新生成证书...[/bold green]"):
+            output = run_mkcert(args)
+            
+        if output:
+            console.print(f"[bold green]✓ {target['name']} 续期成功！新有效期为 3650 天。[/bold green]")
+        else:
+            console.print(f"[bold red]❌ 续期失败。[/bold red]")
+    else:
+        console.print("[red]无效的序号。[/red]")
 
 def apply_for_ca():
     """交互式申请根证书 CA"""
