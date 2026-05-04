@@ -243,7 +243,23 @@ def apply_for_ca():
         output = run_mkcert(args)
     
     if output:
-        console.print(Panel(f"[bold green]✓ 自定义 CA 申请成功！[/bold green]\n[dim]有效期: {years} 年[/dim]", border_style="green", expand=False))
+        console.print(Panel(
+            f"[bold green]✨ 自定义 CA 申请成功！[/bold green]\n"
+            f"[dim]有效期: {years} 年[/dim]", 
+            border_style="green", 
+            expand=False
+        ))
+        
+        # 增加多设备使用提示
+        tips_group = Group(
+            "[bold yellow]💡 如何在其他设备上使用？[/bold yellow]",
+            f"1. 前往目录: [blue]{ca_info['path'] if ca_info else 'CA 根目录'}[/blue]",
+            "2. 将 [bold cyan]rootCA.pem[/bold cyan] 文件拷贝到您的手机或其他电脑",
+            "3. 在其他设备上 [bold underline]手动安装并信任[/bold underline] 该根证书",
+            "[dim]   - Windows: 双击 -> 安装证书 -> 放入“受信任的根证书颁发机构”[/dim]",
+            "[dim]   - Android/iOS: 发送到手机后在设置中搜索“加密与凭据”或“描述文件”进行安装[/dim]"
+        )
+        console.print(Panel(tips_group, border_style="bright_blue", expand=False))
 
 def apply_for_certificate(cert_dir):
     """交互式申请证书"""
@@ -362,12 +378,14 @@ def main():
         console.clear()
         header = "[bold bright_cyan]🛡️  Mkcert 增强版证书工具[/bold bright_cyan]\n"
         info_table = Table(show_header=False, box=None, padding=(0, 2))
-        info_table.add_row("[dim]证书输出目录:[/dim]", f"[blue]{cert_dir.absolute()}[/blue]")
+        
         if ca_info:
             info_table.add_row("[dim]CA 路径:[/dim]", f"[blue]{ca_info['path']}[/blue]")
             info_table.add_row("[dim]CA 有效期:[/dim]", f"[green]{ca_info['expiration']}[/green]")
         else:
             info_table.add_row("[dim]CA 状态:[/dim]", "[bold yellow]尚未安装或未检测到根证书[/bold yellow]")
+            
+        info_table.add_row("[dim]证书输出目录:[/dim]", f"[blue]{cert_dir.absolute()}[/blue]")
 
         console.print(Panel(Group(header, info_table), border_style="bright_blue", padding=(1, 2), expand=False))
 
