@@ -33,7 +33,6 @@ def run_mkcert(args):
         
     cmd = [str(mkcert_exe)] + args
     try:
-        # 使用 subprocess.run 执行命令
         result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', check=True)
         return result.stdout.strip() + result.stderr.strip()
     except subprocess.CalledProcessError as e:
@@ -63,45 +62,71 @@ def get_ca_info():
         return {"path": str(ca_path), "error": str(e)}
 
 def list_certificates(cert_dir):
-    """显示 certs 目录下的证书信息"""
-    console.print("\n[bold cyan]📜 已有证书一览[/bold cyan]")
-    
-    table = Table(show_header=True, header_style="bold magenta", box=None)
-    table.add_column("证书文件名", style="blue")
-    table.add_column("包含域名", style="white")
-    table.add_column("过期时间", style="green")
-    table.add_column("剩余天数", justify="right")
+    """显示 certs 目录下的证书信息（按剩余天数排序）"""
+    console.print("\n[bold cyan]📜 已有证书一览 (按到期时间排序)[/bold cyan]")
     
     cert_files = list(cert_dir.glob("*.pem"))
-    certs = [f for f in cert_files if not f.name.endswith("-key.pem") and "rootCA" not in f.name]
+    certs_to_show = [f for f in cert_files if not f.name.endswith("-key.pem") and "rootCA" not in f.name]
     
-    if not certs:
+    if not certs_to_show:
         console.print("[dim]  ( 暂无证书记录 )[/dim]")
         return
 
     now = datetime.now(timezone.utc)
-    for cert_path in certs:
+    parsed_certs = []
+
+    # 1. 预解析所有证书信息
+    for cert_path in certs_to_show:
         try:
             cert_data = cert_path.read_bytes()
             cert = x509.load_pem_x509_certificate(cert_data, default_backend())
-            domains = []
+            
+            # 域名
             try:
                 ext = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-                domains = ext.value.get_values_for_type(x509.DNSName)
-            except: domains = ["N/A"]
+                domains = ", ".join(ext.value.get_values_for_type(x509.DNSName))
+            except: domains = "N/A"
             
+            # 有效期
             try:
                 expiration = cert.not_valid_after_utc
             except AttributeError:
                 expiration = cert.not_valid_after.replace(tzinfo=timezone.utc)
             
-            delta = expiration - now
-            days_left = delta.days
-            day_style = "green" if days_left > 30 else ("yellow" if days_left > 7 else "bold red")
-                
-            table.add_row(cert_path.name, ", ".join(domains), expiration.strftime("%Y-%m-%d"), f"[{day_style}]{days_left} 天[/{day_style}]")
-        except Exception as e:
-            table.add_row(cert_path.name, "[red]解析失败[/red]", "N/A", "N/A")
+            days_left = (expiration - now).days
+            parsed_certs.append({
+                "name": cert_path.name,
+                "domains": domains,
+                "expiration": expiration,
+                "days_left": days_left
+            })
+        except:
+            # 解析失败的放到最后
+            parsed_certs.append({
+                "name": cert_path.name,
+                "domains": "[red]解析失败[/red]",
+                "expiration": datetime.max.replace(tzinfo=timezone.utc),
+                "days_left": 999999
+            })
+
+    # 2. 按剩余天数排序 (升序，快过期的在前)
+    parsed_certs.sort(key=lambda x: x["days_left"])
+
+    # 3. 构造表格
+    table = Table(show_header=True, header_style="bold magenta", box=None)
+    table.add_column("证书文件名", style="blue")
+    table.add_column("包含域名", style="white")
+    table.add_column("过期时间", style="green")
+    table.add_column("剩余天数", justify="right")
+
+    for c in parsed_certs:
+        day_style = "green" if c["days_left"] > 30 else ("yellow" if c["days_left"] > 7 else "bold red")
+        
+        # 处理解析失败的占位显示
+        exp_str = c["expiration"].strftime("%Y-%m-%d") if c["days_left"] != 999999 else "N/A"
+        days_str = f"[{day_style}]{c['days_left']} 天[/{day_style}]" if c["days_left"] != 999999 else "N/A"
+            
+        table.add_row(c["name"], c["domains"], exp_str, days_str)
             
     console.print(table)
 
