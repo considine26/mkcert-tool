@@ -387,7 +387,7 @@ def main():
         console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold] (安装/自定义根证书)")
         console.print(" [bold cyan]Q.[/bold cyan] ❌ [bold]退出脚本[/bold]")
         
-        choice = Prompt.ask("\n输入选项字母/数字", choices=["1", "2", "D", "d", "R", "r", "Q", "q"], default="2").upper()
+        choice = Prompt.ask("\n输入选项序号/字母 [bold cyan](1/2/D/R/Q)[/bold cyan]", choices=["1", "2", "D", "d", "R", "r", "Q", "q"], show_choices=False, default="2").upper()
 
         if choice == "1":
             list_certificates(cert_dir)
