@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 
 # 针对 Windows 平台的编码修复
 if sys.platform == "win32":
@@ -11,7 +12,7 @@ if sys.platform == "win32":
 
 from rich.console import Console, Group
 from rich.panel import Panel
-from rich.prompt import Prompt, IntPrompt
+from rich.prompt import Prompt, IntPrompt, Confirm
 from rich.table import Table
 
 # 获取证书信息的库
@@ -32,10 +33,11 @@ def run_mkcert(args):
         
     cmd = [str(mkcert_exe)] + args
     try:
+        # 使用 subprocess.run 执行命令
         result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', check=True)
         return result.stdout.strip() + result.stderr.strip()
     except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]mkcert 执行失败:[/bold red]\n[red]{e.stderr}[/red]")
+        console.print(f"[bold red]mkcert 执行失败:[/bold red]\n[red]{e.stderr or e.stdout}[/red]")
         return None
     except Exception as e:
         console.print(f"[bold red]发生未知错误:[/bold red] {str(e)}")
@@ -47,7 +49,7 @@ def get_ca_info():
     if not ca_root: return None
     
     ca_path = Path(ca_root.strip()) / "rootCA.pem"
-    if not ca_path.exists(): return {"path": str(ca_path), "error": "CA 文件不存在"}
+    if not ca_path.exists(): return None
     
     try:
         cert_data = ca_path.read_bytes()
@@ -55,12 +57,10 @@ def get_ca_info():
         try:
             expiration = cert.not_valid_after_utc
         except AttributeError:
-            expiration = cert.not_valid_after
+            expiration = cert.not_valid_after.replace(tzinfo=timezone.utc)
         return {"path": str(ca_path), "expiration": expiration.strftime("%Y-%m-%d %H:%M:%S")}
     except Exception as e:
         return {"path": str(ca_path), "error": str(e)}
-
-from datetime import datetime, timezone
 
 def list_certificates(cert_dir):
     """显示 certs 目录下的证书信息"""
@@ -73,7 +73,6 @@ def list_certificates(cert_dir):
     table.add_column("剩余天数", justify="right")
     
     cert_files = list(cert_dir.glob("*.pem"))
-    # 过滤掉私钥和根证书
     certs = [f for f in cert_files if not f.name.endswith("-key.pem") and "rootCA" not in f.name]
     
     if not certs:
@@ -81,67 +80,89 @@ def list_certificates(cert_dir):
         return
 
     now = datetime.now(timezone.utc)
-
     for cert_path in certs:
         try:
             cert_data = cert_path.read_bytes()
             cert = x509.load_pem_x509_certificate(cert_data, default_backend())
-            
-            # 提取 SAN (域名)
             domains = []
             try:
                 ext = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
                 domains = ext.value.get_values_for_type(x509.DNSName)
-            except:
-                domains = ["N/A"]
+            except: domains = ["N/A"]
             
-            # 提取有效期
             try:
                 expiration = cert.not_valid_after_utc
             except AttributeError:
                 expiration = cert.not_valid_after.replace(tzinfo=timezone.utc)
             
-            # 计算剩余天数
             delta = expiration - now
             days_left = delta.days
-            
-            # 根据天数设置颜色
-            day_style = "green"
-            if days_left < 7:
-                day_style = "bold red"
-            elif days_left < 30:
-                day_style = "yellow"
+            day_style = "green" if days_left > 30 else ("yellow" if days_left > 7 else "bold red")
                 
-            table.add_row(
-                cert_path.name, 
-                ", ".join(domains), 
-                expiration.strftime("%Y-%m-%d"),
-                f"[{day_style}]{days_left} 天[/{day_style}]"
-            )
+            table.add_row(cert_path.name, ", ".join(domains), expiration.strftime("%Y-%m-%d"), f"[{day_style}]{days_left} 天[/{day_style}]")
         except Exception as e:
             table.add_row(cert_path.name, "[red]解析失败[/red]", "N/A", "N/A")
             
     console.print(table)
 
-def apply_for_certificate(cert_dir):
-    """申请新证书逻辑"""
-    console.print("\n[bold]请输入要申请证书的域名：[/bold]")
-    console.print("[dim]支持多个域名用空格分隔，例如: example.local *.example.local localhost[/dim]")
-    
-    default_domains = "localhost 127.0.0.1 ::1"
-    domains_input = Prompt.ask("域名列表", default=default_domains)
-    domains = domains_input.split()
-    
-    if not domains:
-        console.print("[bold red]错误: 未提供域名。[/bold red]")
+def apply_for_ca():
+    """交互式申请根证书 CA"""
+    console.print("\n[bold yellow]🛡️  申请根证书 CA[/bold yellow]")
+    if not Confirm.ask("是否需要自定义 CA 信息？(否则将使用默认设置)", default=False):
+        with console.status("[bold yellow]正在安装默认 CA...[/bold yellow]"):
+            output = run_mkcert(["-install"])
+        if output: console.print("[bold green]✓ 默认 CA 已成功安装！[/bold green]")
         return
+
+    org = Prompt.ask("输入 [bold]组织名称[/bold] (ca-org)", default="Local CA")
+    unit = Prompt.ask("输入 [bold]组织部门[/bold] (ca-orgUnit)", default="Development")
+    cn = Prompt.ask("输入 [bold]通用名称[/bold] (ca-commonName)", default="mkcert root CA")
+    years = Prompt.ask("输入 [bold]有效期（年）[/bold] (ca-years)", default="10")
+
+    args = [
+        "-install",
+        f"-ca-org={org}",
+        f"-ca-orgUnit={unit}",
+        f"-ca-commonName={cn}",
+        f"-ca-years={years}"
+    ]
+
+    with console.status("[bold yellow]正在申请自定义 CA...[/bold yellow]"):
+        output = run_mkcert(args)
+    
+    if output:
+        console.print(Panel(f"[bold green]✓ 自定义 CA 申请成功！[/bold green]\n[dim]有效期: {years} 年[/dim]", border_style="green", expand=False))
+
+def apply_for_certificate(cert_dir):
+    """交互式申请证书"""
+    console.print("\n[bold]请输入要申请证书的域名：[/bold]")
+    console.print("[dim]例如: example.local *.example.local 192.168.1.1[/dim]")
+    
+    domains_input = Prompt.ask("域名列表", default="localhost 127.0.0.1 ::1")
+    domains = domains_input.split()
+    if not domains: return
+
+    args = []
+    if Confirm.ask("是否需要自定义证书信息（组织、有效期等）？", default=False):
+        org = Prompt.ask("输入 [bold]组织名称[/bold] (cert-org)", default="Local Cert")
+        unit = Prompt.ask("输入 [bold]组织部门[/bold] (cert-orgUnit)", default="Web Server")
+        cn = Prompt.ask("输入 [bold]通用名称[/bold] (cert-commonName)", default=domains[0])
+        days = Prompt.ask("输入 [bold]有效期天数[/bold] (cert-days)", default="825")
+        args = [
+            f"-cert-org={org}",
+            f"-cert-orgUnit={unit}",
+            f"-cert-commonName={cn}",
+            f"-cert-days={days}"
+        ]
 
     safe_name = domains[0].replace("*", "wildcard").replace(".", "_")
     cert_file = cert_dir / f"{safe_name}.pem"
     key_file = cert_dir / f"{safe_name}-key.pem"
 
-    with console.status(f"[bold magenta]正在生成证书...[/bold magenta]", spinner="pulse"):
-        args = ["-cert-file", str(cert_file), "-key-file", str(key_file)] + domains
+    args.extend(["-cert-file", str(cert_file), "-key-file", str(key_file)])
+    args.extend(domains)
+
+    with console.status(f"[bold magenta]正在生成证书...[/bold magenta]", spinner="dots"):
         output = run_mkcert(args)
 
     if output:
@@ -158,40 +179,40 @@ def main():
     cert_dir = base_path / "certs"
     if not cert_dir.exists(): cert_dir.mkdir(parents=True)
 
-    # 初始化检查
-    with console.status("[bold yellow]正在初始化并检查 CA 状态...[/bold yellow]", spinner="dots"):
-        run_mkcert(["-install"])
-        ca_info = get_ca_info()
-
     while True:
+        # 获取 CA 信息用于展示
+        ca_info = get_ca_info()
+        
         console.clear()
-        # 打印状态面板
-        header = "[bold bright_cyan]🛡️  Mkcert 证书自动化工具[/bold bright_cyan]\n[dim]基于 Python + Rich + UV[/dim]\n"
+        header = "[bold bright_cyan]🛡️  Mkcert 增强版证书工具[/bold bright_cyan]\n[dim]支持自定义 CA 名称及有效期[/dim]\n"
         info_table = Table(show_header=False, box=None, padding=(0, 2))
-        info_table.add_row("[dim]输出目录:[/dim]", f"[blue]{cert_dir.absolute()}[/blue]")
-        if ca_info and "error" not in ca_info:
+        info_table.add_row("[dim]证书输出目录:[/dim]", f"[blue]{cert_dir.absolute()}[/blue]")
+        if ca_info:
             info_table.add_row("[dim]CA 路径:[/dim]", f"[blue]{ca_info['path']}[/blue]")
             info_table.add_row("[dim]CA 有效期:[/dim]", f"[green]{ca_info['expiration']}[/green]")
         else:
-            info_table.add_row("[dim]CA 状态:[/dim]", "[bold red]异常[/bold red]")
+            info_table.add_row("[dim]CA 状态:[/dim]", "[bold yellow]尚未安装或未检测到根证书[/bold yellow]")
 
         console.print(Panel(Group(header, info_table), border_style="bright_blue", padding=(1, 2), expand=False))
 
-        # 菜单
         console.print("\n[bold]请选择功能：[/bold]")
         console.print(" [bold cyan]1.[/bold cyan] 📜 [bold]证书一览[/bold] (查看已生成证书)")
-        console.print(" [bold cyan]2.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新证书)")
-        console.print(" [bold cyan]3.[/bold cyan] ❌ [bold]退出脚本[/bold]")
+        console.print(" [bold cyan]2.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新域名证书)")
+        console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold] (安装/自定义根证书)")
+        console.print(" [bold cyan]Q.[/bold cyan] ❌ [bold]退出脚本[/bold]")
         
-        choice = IntPrompt.ask("\n输入选项序号", choices=["1", "2", "3"], default=2)
+        choice = Prompt.ask("\n输入选项字母/数字", choices=["1", "2", "R", "r", "Q", "q"], default="2").upper()
 
-        if choice == 1:
+        if choice == "1":
             list_certificates(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
-        elif choice == 2:
+        elif choice == "2":
             apply_for_certificate(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
-        elif choice == 3:
+        elif choice == "R":
+            apply_for_ca()
+            Prompt.ask("\n按回车键返回主菜单")
+        elif choice == "Q":
             console.print("[yellow]已退出，祝您生活愉快！[/yellow]")
             break
 
