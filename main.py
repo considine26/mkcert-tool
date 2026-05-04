@@ -297,7 +297,7 @@ def cleanup_certificates(cert_dir):
         console.print(" [2] 手动选择删除证书")
         console.print(" [0] 返回主菜单")
         
-        choice = IntPrompt.ask("\n请选择清理方式", choices=[0, 1, 2], default=0)
+        choice = IntPrompt.ask("\n请选择清理方式", choices=["0", "1", "2"], default=0)
         if choice == 0: break
 
         parsed_certs = get_parsed_certs(cert_dir)
