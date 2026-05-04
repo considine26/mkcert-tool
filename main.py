@@ -46,14 +46,25 @@ from cryptography.hazmat.backends import default_backend
 # 初始化 Rich 控制台，强制使用 UTF-8
 console = Console(force_terminal=True)
 
+import shutil
+
 def run_mkcert(args):
-    """运行本地的 mkcert.exe"""
+    """运行本地或系统的 mkcert"""
     base_path = Path(__file__).parent
-    mkcert_exe = base_path / "mkcert.exe"
     
+    # 1. 确定可执行文件名
+    exe_name = "mkcert.exe" if sys.platform == "win32" else "mkcert"
+    mkcert_exe = base_path / exe_name
+    
+    # 2. 如果本地不存在，尝试从系统 PATH 中查找
     if not mkcert_exe.exists():
-        console.print(f"[bold red]错误:[/bold red] 在路径 [yellow]{mkcert_exe}[/yellow] 未找到 mkcert.exe。")
-        sys.exit(1)
+        path_exe = shutil.which("mkcert")
+        if path_exe:
+            mkcert_exe = Path(path_exe)
+        else:
+            console.print(f"[bold red]错误:[/bold red] 未找到 mkcert 可执行文件。")
+            console.print(f"[dim]请确保 {exe_name} 已放置在脚本同级目录下，或已安装至系统环境变量 PATH 中。[/dim]")
+            sys.exit(1)
         
     cmd = [str(mkcert_exe)] + args
     try:
@@ -85,33 +96,23 @@ def get_ca_info():
     except Exception as e:
         return {"path": str(ca_path), "error": str(e)}
 
-def list_certificates(cert_dir):
-    """显示 certs 目录下的证书信息（按剩余天数排序）"""
-    console.print("\n[bold cyan]📜 已有证书一览 (按到期时间排序)[/bold cyan]")
-    
+def get_parsed_certs(cert_dir):
+    """获取并解析所有证书信息，按剩余天数排序"""
     cert_files = list(cert_dir.glob("*.pem"))
     certs_to_show = [f for f in cert_files if not f.name.endswith("-key.pem") and "rootCA" not in f.name]
     
-    if not certs_to_show:
-        console.print("[dim]  ( 暂无证书记录 )[/dim]")
-        return
-
     now = datetime.now(timezone.utc)
     parsed_certs = []
 
-    # 1. 预解析所有证书信息
     for cert_path in certs_to_show:
         try:
             cert_data = cert_path.read_bytes()
             cert = x509.load_pem_x509_certificate(cert_data, default_backend())
-            
-            # 域名
             try:
                 ext = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
                 domains = ", ".join(ext.value.get_values_for_type(x509.DNSName))
             except: domains = "N/A"
             
-            # 有效期
             try:
                 expiration = cert.not_valid_after_utc
             except AttributeError:
@@ -119,22 +120,32 @@ def list_certificates(cert_dir):
             
             days_left = (expiration - now).days
             parsed_certs.append({
+                "path": cert_path,
                 "name": cert_path.name,
                 "domains": domains,
                 "expiration": expiration,
                 "days_left": days_left
             })
         except:
-            # 解析失败的放到最后
             parsed_certs.append({
+                "path": cert_path,
                 "name": cert_path.name,
                 "domains": "[red]解析失败[/red]",
                 "expiration": datetime.max.replace(tzinfo=timezone.utc),
                 "days_left": 999999
             })
 
-    # 2. 按剩余天数排序 (升序，快过期的在前)
     parsed_certs.sort(key=lambda x: x["days_left"])
+    return parsed_certs
+
+def list_certificates(cert_dir):
+    """显示 certs 目录下的证书信息（按剩余天数排序）"""
+    console.print("\n[bold cyan]📜 已有证书一览 (按到期时间排序)[/bold cyan]")
+    
+    parsed_certs = get_parsed_certs(cert_dir)
+    if not parsed_certs:
+        console.print("[dim]  ( 暂无证书记录 )[/dim]")
+        return
 
     # 3. 构造表格
     table = Table(show_header=True, header_style="bold magenta", box=None)
@@ -166,12 +177,8 @@ def list_certificates(cert_dir):
         
         # 提取域名
         domains = [d.strip() for d in target["domains"].split(",")]
-        
-        # 构建续期参数 (默认给 10 年)
-        cert_file = cert_dir / target["name"]
-        # 尝试推断 key 文件名 (通常是 certname-key.pem)
-        key_name = target["name"].replace(".pem", "-key.pem")
-        key_file = cert_dir / key_name
+        cert_file = target["path"]
+        key_file = cert_file.parent / cert_file.name.replace(".pem", "-key.pem")
 
         console.print(f"\n[bold magenta]正在为 {target['name']} 进行续期...[/bold magenta]")
         
@@ -282,6 +289,63 @@ def apply_for_certificate(cert_dir):
     else:
         console.print("[bold red]❌ 申请失败。[/bold red]")
 
+def cleanup_certificates(cert_dir):
+    """证书清理工具"""
+    while True:
+        console.print("\n[bold red]🧹 证书清理工具[/bold red]")
+        console.print(" [1] 自动清理已过期的证书")
+        console.print(" [2] 手动选择删除证书")
+        console.print(" [0] 返回主菜单")
+        
+        choice = IntPrompt.ask("\n请选择清理方式", choices=[0, 1, 2], default=0)
+        if choice == 0: break
+
+        parsed_certs = get_parsed_certs(cert_dir)
+        if not parsed_certs:
+            console.print("[dim]  ( 暂无证书记录 )[/dim]")
+            break
+
+        if choice == 1:
+            expired = [c for c in parsed_certs if c["days_left"] < 0]
+            if not expired:
+                console.print("[green]没有发现已过期的证书。[/green]")
+                continue
+            
+            if Confirm.ask(f"发现 [bold red]{len(expired)}[/bold red] 个过期证书，确认全部删除吗？", default=False):
+                for c in expired:
+                    try:
+                        c["path"].unlink()
+                        key_p = c["path"].parent / c["name"].replace(".pem", "-key.pem")
+                        if key_p.exists(): key_p.unlink()
+                        console.print(f"[dim]已删除: {c['name']}[/dim]")
+                    except Exception as e:
+                        console.print(f"[red]删除 {c['name']} 失败: {e}[/red]")
+                console.print("[bold green]过期清理完成。[/bold green]")
+
+        elif choice == 2:
+            table = Table(show_header=True, header_style="bold magenta", box=None)
+            table.add_column("序号", style="dim")
+            table.add_column("证书文件名", style="blue")
+            table.add_column("剩余天数", justify="right")
+            for idx, c in enumerate(parsed_certs, 1):
+                table.add_row(str(idx), c["name"], f"{c['days_left']} 天")
+            console.print(table)
+
+            del_idx = Prompt.ask("\n请输入要删除的证书 [bold red]序号[/bold red] (多个用空格，回车取消)")
+            if not del_idx: continue
+            
+            indices = [int(i)-1 for i in del_idx.split() if i.isdigit()]
+            for idx in indices:
+                if 0 <= idx < len(parsed_certs):
+                    c = parsed_certs[idx]
+                    try:
+                        c["path"].unlink()
+                        key_p = c["path"].parent / c["name"].replace(".pem", "-key.pem")
+                        if key_p.exists(): key_p.unlink()
+                        console.print(f"[green]已删除: {c['name']}[/green]")
+                    except Exception as e:
+                        console.print(f"[red]删除失败: {e}[/red]")
+
 def main():
     base_path = Path(__file__).parent
     cert_dir = base_path / "certs"
@@ -313,12 +377,13 @@ def main():
             ))
 
         console.print("\n[bold]请选择功能：[/bold]")
-        console.print(" [bold cyan]1.[/bold cyan] 📜 [bold]证书一览[/bold] (查看已生成证书)")
+        console.print(" [bold cyan]1.[/bold cyan] 📜 [bold]证书一览[/bold] (查看/续期证书)")
         console.print(" [bold cyan]2.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新域名证书)")
+        console.print(" [bold cyan]D.[/bold cyan] 🧹 [bold]清理证书[/bold] (过期清理/手动删除)")
         console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold] (安装/自定义根证书)")
         console.print(" [bold cyan]Q.[/bold cyan] ❌ [bold]退出脚本[/bold]")
         
-        choice = Prompt.ask("\n输入选项字母/数字", choices=["1", "2", "R", "r", "Q", "q"], default="2").upper()
+        choice = Prompt.ask("\n输入选项字母/数字", choices=["1", "2", "D", "d", "R", "r", "Q", "q"], default="2").upper()
 
         if choice == "1":
             list_certificates(cert_dir)
@@ -328,6 +393,9 @@ def main():
             Prompt.ask("\n按回车键返回主菜单")
         elif choice == "R":
             apply_for_ca()
+            Prompt.ask("\n按回车键返回主菜单")
+        elif choice == "D":
+            cleanup_certificates(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
         elif choice == "Q":
             console.print("[yellow]已退出，祝您生活愉快！[/yellow]")
