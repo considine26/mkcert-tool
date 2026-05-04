@@ -132,6 +132,19 @@ def list_certificates(cert_dir):
 
 def apply_for_ca():
     """交互式申请根证书 CA"""
+    # 增加安全检查
+    current_ca = get_ca_info()
+    if current_ca:
+        console.print(Panel(
+            "[bold red]⚠ 警告：检测到系统中已存在有效的根证书 (CA)！[/bold red]\n"
+            "[dim]重新申请 CA 将会生成新的密钥对，导致您之前申请的所有域名证书全部失效。\n"
+            "除非您确定需要更换根证书，否则不建议进行此操作。[/dim]",
+            border_style="red"
+        ))
+        if not Confirm.ask("[bold red]确定要覆盖现有的根证书并重新申请吗？[/bold red]", default=False):
+            console.print("[yellow]已取消操作，现有 CA 未受影响。[/yellow]")
+            return
+
     console.print("\n[bold yellow]🛡️  申请根证书 CA[/bold yellow]")
     if not Confirm.ask("是否需要自定义 CA 信息？(否则将使用默认设置)", default=False):
         with console.status("[bold yellow]正在安装默认 CA...[/bold yellow]"):
