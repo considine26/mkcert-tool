@@ -220,6 +220,15 @@ def main():
 
         console.print(Panel(Group(header, info_table), border_style="bright_blue", padding=(1, 2), expand=False))
 
+        # 如果没有检测到 CA，增加显著的友好提示
+        if not ca_info:
+            console.print(Panel(
+                "[bold yellow]⚠ 未检测到本地根证书 (CA)[/bold yellow]\n"
+                "[dim]这会导致浏览器显示证书不受信任。请选择下方的 [bold cyan]R[/bold cyan] 键来安装或自定义您的根证书。[/dim]",
+                border_style="yellow",
+                expand=False
+            ))
+
         console.print("\n[bold]请选择功能：[/bold]")
         console.print(" [bold cyan]1.[/bold cyan] 📜 [bold]证书一览[/bold] (查看已生成证书)")
         console.print(" [bold cyan]2.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新域名证书)")
