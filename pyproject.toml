@@ -1,7 +1,7 @@
 [project]
 name = "mkcert"
 version = "0.1.0"
-description = "Add your description here"
+description = "Mkcert 增强版证书自动化工具"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
