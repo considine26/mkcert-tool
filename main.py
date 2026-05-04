@@ -15,6 +15,30 @@ from rich.panel import Panel
 from rich.prompt import Prompt, IntPrompt, Confirm
 from rich.table import Table
 
+import json
+
+# 配置文件路径
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
+def load_config():
+    """加载持久化配置"""
+    if CONFIG_FILE.exists():
+        try:
+            return json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
+        except:
+            return {}
+    return {}
+
+def save_config(config):
+    """保存配置"""
+    try:
+        CONFIG_FILE.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding='utf-8')
+    except:
+        pass
+
+# 初始化配置
+user_config = load_config()
+
 # 获取证书信息的库
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -189,10 +213,14 @@ def apply_for_ca():
         if output: console.print("[bold green]✓ 默认 CA 已成功安装！[/bold green]")
         return
 
-    org = Prompt.ask("输入 [bold]组织名称[/bold] (ca-org)", default="Local CA")
-    unit = Prompt.ask("输入 [bold]组织部门[/bold] (ca-orgUnit)", default="Development")
-    cn = Prompt.ask("输入 [bold]通用名称[/bold] (ca-commonName)", default="mkcert root CA")
-    years = Prompt.ask("输入 [bold]有效期（年）[/bold] (ca-years)", default="10")
+    org = Prompt.ask("输入 [bold]组织名称[/bold] (ca-org)", default=user_config.get("ca-org", "Local CA"))
+    unit = Prompt.ask("输入 [bold]组织部门[/bold] (ca-orgUnit)", default=user_config.get("ca-orgUnit", "Development"))
+    cn = Prompt.ask("输入 [bold]通用名称[/bold] (ca-commonName)", default=user_config.get("ca-commonName", "mkcert root CA"))
+    years = Prompt.ask("输入 [bold]有效期（年）[/bold] (ca-years)", default=user_config.get("ca-years", "10"))
+
+    # 更新配置
+    user_config.update({"ca-org": org, "ca-orgUnit": unit, "ca-commonName": cn, "ca-years": years})
+    save_config(user_config)
 
     args = [
         "-install",
@@ -219,10 +247,15 @@ def apply_for_certificate(cert_dir):
 
     args = []
     if Confirm.ask("是否需要自定义证书信息（组织、有效期等）？", default=False):
-        org = Prompt.ask("输入 [bold]组织名称[/bold] (cert-org)", default="Local Cert")
-        unit = Prompt.ask("输入 [bold]组织部门[/bold] (cert-orgUnit)", default="Web Server")
+        org = Prompt.ask("输入 [bold]组织名称[/bold] (cert-org)", default=user_config.get("cert-org", "Local Cert"))
+        unit = Prompt.ask("输入 [bold]组织部门[/bold] (cert-orgUnit)", default=user_config.get("cert-orgUnit", "Web Server"))
         cn = Prompt.ask("输入 [bold]通用名称[/bold] (cert-commonName)", default=domains[0])
-        days = Prompt.ask("输入 [bold]有效期天数[/bold] (cert-days)", default="825")
+        days = Prompt.ask("输入 [bold]有效期天数[/bold] (cert-days)", default=user_config.get("cert-days", "825"))
+        
+        # 更新并保存配置
+        user_config.update({"cert-org": org, "cert-orgUnit": unit, "cert-days": days})
+        save_config(user_config)
+        
         args = [
             f"-cert-org={org}",
             f"-cert-orgUnit={unit}",
