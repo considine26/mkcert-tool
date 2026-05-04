@@ -140,6 +140,7 @@ def get_parsed_certs(cert_dir):
 
 def list_certificates(cert_dir):
     """显示 certs 目录下的证书信息（按剩余天数排序）"""
+    console.clear()
     console.print("\n[bold cyan]📜 已有证书一览 (按到期时间排序)[/bold cyan]")
     
     parsed_certs = get_parsed_certs(cert_dir)
@@ -164,7 +165,7 @@ def list_certificates(cert_dir):
     console.print(table)
 
     # 4. 快速续期交互
-    renew_idx = Prompt.ask("\n输入 [bold cyan]序号[/bold cyan] 快速续期 (默认 10 年，直接回车返回)")
+    renew_idx = Prompt.ask("\n输入 [bold cyan]序号[/bold cyan] 快速续期 (默认 10年，直接回车返回)")
     if not renew_idx or not renew_idx.isdigit():
         return
 
@@ -192,7 +193,7 @@ def list_certificates(cert_dir):
             output = run_mkcert(args)
             
         if output:
-            console.print(f"[bold green]✓ {target['name']} 续期成功！新有效期为 3650 天。[/bold green]")
+            console.print(f"[bold green]✓ {target['name']} 续期成功！新有效期为 3650天。[/bold green]")
         else:
             console.print(f"[bold red]❌ 续期失败。[/bold red]")
     else:
@@ -200,6 +201,7 @@ def list_certificates(cert_dir):
 
 def apply_for_ca():
     """交互式申请根证书 CA"""
+    console.clear()
     # 增加安全检查
     current_ca = get_ca_info()
     if current_ca:
@@ -245,6 +247,7 @@ def apply_for_ca():
 
 def apply_for_certificate(cert_dir):
     """交互式申请证书"""
+    console.clear()
     console.print("\n[bold]请输入要申请证书的域名：[/bold]")
     console.print("[dim]例如: example.local *.example.local 192.168.1.1[/dim]")
     
@@ -292,8 +295,9 @@ def apply_for_certificate(cert_dir):
 def cleanup_certificates(cert_dir):
     """证书清理工具"""
     while True:
+        console.clear()
         console.print("\n[bold red]🧹 证书清理工具[/bold red]")
-        console.print(" [1] 自动清理已过期的证书")
+        console.print(" [1] 自动清理过期证书")
         console.print(" [2] 手动选择删除证书")
         console.print(" [0] 返回主菜单")
         
@@ -356,7 +360,7 @@ def main():
         ca_info = get_ca_info()
         
         console.clear()
-        header = "[bold bright_cyan]🛡️  Mkcert 增强版证书工具[/bold bright_cyan]\n[dim]支持自定义 CA 名称及有效期[/dim]\n"
+        header = "[bold bright_cyan]🛡️  Mkcert 增强版证书工具[/bold bright_cyan]\n"
         info_table = Table(show_header=False, box=None, padding=(0, 2))
         info_table.add_row("[dim]证书输出目录:[/dim]", f"[blue]{cert_dir.absolute()}[/blue]")
         if ca_info:
