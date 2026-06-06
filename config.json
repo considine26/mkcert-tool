@@ -1,0 +1,21 @@
+{
+    "cert_output_dir": "certs",
+
+    "ca-org": "Local CA",
+    "ca-orgUnit": "Development",
+    "ca-commonName": "mkcert root CA",
+    "ca-years": "10",
+
+    "cert-org": "Local Cert",
+    "cert-orgUnit": "Web Server",
+    "cert-days": "825",
+
+    "default_domains": "localhost 127.0.0.1 ::1",
+
+    "warn_days_yellow": 30,
+    "warn_days_red": 7,
+
+    "renew_days": 3650,
+
+    "language": "zh-CN"
+}
