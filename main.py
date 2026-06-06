@@ -20,7 +20,7 @@ from src.certificates import (
 
 
 def main() -> None:
-    # 首次运行时生成默认 config.json
+    # 首次运行时生成默认 config.ini
     ensure_config_file()
 
     cfg = load_config()
