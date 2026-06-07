@@ -88,8 +88,8 @@ def list_certificates(cert_dir: Path) -> None:
         return
 
     table = Table(show_header=True, header_style="bold magenta", box=None)
-    table.add_column("序号",     style="dim", justify="center")
-    table.add_column("证书文件名", style="blue")
+    table.add_column("#",     style="dim", justify="center")
+    table.add_column("证书文件", style="blue")
     table.add_column("包含域名",  style="white")
     table.add_column("过期时间",  style="green")
     table.add_column("剩余天数",  justify="right")
@@ -113,7 +113,7 @@ def list_certificates(cert_dir: Path) -> None:
 
     # 快速续期
     renew_idx = Prompt.ask(
-        f"\n输入 [bold cyan]序号[/bold cyan] 快速续期 (默认 {renew_days} 天，直接回车返回)"
+        f"\n输入[bold cyan]序号[/bold cyan]快速续期(默认[bold cyan]{renew_days}[/bold cyan]天)"
     )
     if not renew_idx or not renew_idx.isdigit():
         return
@@ -169,7 +169,7 @@ def apply_for_certificate(cert_dir: Path) -> None:
         org  = Prompt.ask("输入 [bold]组织名称[/bold] (cert-org)",    default=cfg.get("cert-org", "Local Cert"))
         unit = Prompt.ask("输入 [bold]组织部门[/bold] (cert-orgUnit)", default=cfg.get("cert-orgUnit", "Web Server"))
         cn   = Prompt.ask("输入 [bold]通用名称[/bold] (cert-commonName)", default=domains[0])
-        days = Prompt.ask("输入 [bold]有效期天数[/bold] (cert-days)",  default=str(cfg.get("cert-days", "825")))
+        days = Prompt.ask("输入 [bold]有效天数[/bold] (cert-days)",  default=str(cfg.get("cert-days", "825")))
 
         cfg.update({"cert-org": org, "cert-orgUnit": unit, "cert-days": days})
         save_config(cfg)
