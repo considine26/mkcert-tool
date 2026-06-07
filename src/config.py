@@ -22,6 +22,7 @@ CONFIG_FILE = _BASE_PATH / "config.ini"
 DEFAULT_CONFIG: dict = {
     # [paths]
     "cert_output_dir": "certs",
+    "mkcert_path":     "",             # 留空则自动发现
 
     # [ca]
     "ca-org":         "Local CA",
@@ -40,7 +41,7 @@ DEFAULT_CONFIG: dict = {
     "warn_days_red":    7,
 
     # [renewal]
-    "renew_days": 3650,
+    "renew_days": 825,
 
     # [ui]
     "language": "zh-CN",
@@ -49,6 +50,7 @@ DEFAULT_CONFIG: dict = {
 # 各字段所属 section 的映射表（写入 INI 时使用）
 _SECTION_MAP: dict[str, str] = {
     "cert_output_dir":   "paths",
+    "mkcert_path":       "paths",
     "ca-org":            "ca",
     "ca-orgUnit":        "ca",
     "ca-commonName":     "ca",
@@ -148,6 +150,8 @@ def _write_default_template() -> None:
 [paths]
 # 证书输出目录（相对于项目根目录）
 cert_output_dir = certs
+; mkcert 可执行文件绝对路径（留空则自动发现：先找项目根目录，再找 PATH）
+mkcert_path =
 
 [ca]
 # 根证书 CA 默认参数
@@ -178,8 +182,9 @@ warn_days_yellow = 30
 warn_days_red    = 7
 
 [renewal]
-# 快速续期时默认的新有效期（天），默认 3650 天 ≈ 10 年
-renew_days = 3650
+; 快速续期时默认的新有效期（天）
+; 浏览器最多信任 825 天，建议不超过此值
+renew_days = 825
 
 [ui]
 # 界面语言（预留字段，当前仅支持 zh-CN）

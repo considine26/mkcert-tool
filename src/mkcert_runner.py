@@ -1,5 +1,7 @@
 """
 mkcert_runner.py - mkcert 可执行文件调用封装
+优先读取 config.ini 中的 mkcert_path，
+未配置时自动在项目根目录和系统 PATH 中查找。
 """
 
 import sys
@@ -8,44 +10,71 @@ import subprocess
 from pathlib import Path
 
 from .ui import console
+from .config import load_config
 
 # 项目根目录（src 的上级）
 _BASE_PATH = Path(__file__).parent.parent
 
 
+def _find_mkcert() -> Path:
+    """
+    按优先级查找 mkcert 可执行文件：
+
+    1. config.ini 中显式配置的 mkcert_path（必须存在，否则直接报错）
+    2. 项目根目录下的 mkcert(.exe)
+    3. 系统 PATH 中的 mkcert
+
+    全部未找到则打印错误信息并以 exit(1) 终止。
+    """
+    cfg = load_config()
+    configured = (cfg.get("mkcert_path") or "").strip()
+
+    # 1. 显式配置路径
+    if configured:
+        p = Path(configured)
+        if p.is_file():
+            return p
+        console.print(f"[bold red]错误:[/bold red] config.ini 中 mkcert_path 指向的文件不存在：")
+        console.print(f"[dim]{configured}[/dim]")
+        sys.exit(1)
+
+    # 2. 项目根目录
+    exe_name = "mkcert.exe" if sys.platform == "win32" else "mkcert"
+    local_exe = _BASE_PATH / exe_name
+    if local_exe.exists():
+        return local_exe
+
+    # 3. 系统 PATH
+    path_exe = shutil.which("mkcert")
+    if path_exe:
+        return Path(path_exe)
+
+    # 均未找到
+    console.print(f"[bold red]错误:[/bold red] 未找到 mkcert 可执行文件。")
+    console.print(
+        f"[dim]请执行以下任一操作：[/dim]"
+        f"[dim]\n  1. 将 mkcert.exe 放置在项目根目录[/dim]"
+        f"[dim]\n  2. 将 mkcert 安装至系统 PATH[/dim]"
+        f"[dim]\n  3. 在 config.ini 的 [paths] 节中配置 mkcert_path 为绝对路径[/dim]"
+    )
+    sys.exit(1)
+
+
 def run_mkcert(args: list[str]) -> str | None:
     """
-    运行本地或系统路径中的 mkcert。
-
-    优先使用与脚本同级目录下的 mkcert(.exe)，
-    若不存在则从系统 PATH 中查找，两者均缺失则退出。
-
-    Returns:
-        命令输出字符串，失败时返回 None。
+    运行 mkcert，返回合并后的 stdout + stderr 字符串；
+    执行失败时返回 None。
     """
-    exe_name = "mkcert.exe" if sys.platform == "win32" else "mkcert"
-    mkcert_exe = _BASE_PATH / exe_name
-
-    if not mkcert_exe.exists():
-        path_exe = shutil.which("mkcert")
-        if path_exe:
-            mkcert_exe = Path(path_exe)
-        else:
-            console.print(f"[bold red]错误:[/bold red] 未找到 mkcert 可执行文件。")
-            console.print(
-                f"[dim]请确保 {exe_name} 已放置在脚本同级目录下，"
-                f"或已安装至系统环境变量 PATH 中。[/dim]"
-            )
-            sys.exit(1)
-
+    mkcert_exe = _find_mkcert()
     cmd = [str(mkcert_exe)] + args
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            encoding='utf-8',
-            check=True
+            encoding="utf-8",
+            check=True,
         )
         return result.stdout.strip() + result.stderr.strip()
     except subprocess.CalledProcessError as e:
