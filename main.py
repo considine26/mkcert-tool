@@ -37,10 +37,21 @@ def main() -> None:
         info_table_rows = []
 
         from rich.table import Table
-        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table = Table(show_header=False, box=None)
         if ca_info:
-            info_table.add_row("[dim]CA 路径:[/dim]",   f"[blue]{ca_info['path']}[/blue]")
-            info_table.add_row("[dim]CA 有效期:[/dim]", f"[green]{ca_info['expiration']}[/green]")
+            exp_str = ca_info['expiration']
+            days    = ca_info.get('days_left', 0)
+            if days > 30:
+                day_style = 'green'
+            elif days > 7:
+                day_style = 'yellow'
+            else:
+                day_style = 'bold red'
+            exp_display  = f"[green]{exp_str}[/green] ("
+            exp_display += f"[{day_style}]剩余 {days} 天[/{day_style}]"
+            exp_display += ")"
+            info_table.add_row("[dim]CA 根证书:[/dim]",   f"[blue]{ca_info['path']}[/blue]")
+            info_table.add_row("[dim]CA 有效期:[/dim]", exp_display)
         else:
             info_table.add_row("[dim]CA 状态:[/dim]", "[bold yellow]尚未安装或未检测到根证书[/bold yellow]")
 
@@ -67,11 +78,11 @@ def main() -> None:
         console.print(" [bold cyan]2.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新域名证书)")
         console.print(" [bold cyan]D.[/bold cyan] 🧹 [bold]清理证书[/bold] (过期清理/手动删除)")
         console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold]  (安装/自定义根证书)")
-        console.print(" [bold cyan]Q.[/bold cyan] ❌ [bold]退出脚本[/bold]")
+        console.print(" [bold cyan]0.[/bold cyan] ❌ [bold]退出脚本[/bold]")
 
         choice = Prompt.ask(
-            "\n输入选项序号/字母 [bold cyan](1/2/D/R/Q)[/bold cyan]",
-            choices=["1", "2", "D", "d", "R", "r", "Q", "q"],
+            "\n输入选项序号/字母 [bold cyan](1/2/D/R/0)[/bold cyan]",
+            choices=["1", "2", "D", "d", "R", "r", "0"],
             show_choices=False,
             default="2"
         ).upper()
@@ -88,7 +99,7 @@ def main() -> None:
         elif choice == "D":
             cleanup_certificates(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
-        elif choice == "Q":
+        elif choice == "0":
             console.print("[yellow]已退出，祝您生活愉快！[/yellow]")
             break
 

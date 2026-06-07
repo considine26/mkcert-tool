@@ -40,9 +40,13 @@ def get_ca_info() -> dict | None:
             expiration = cert.not_valid_after_utc
         except AttributeError:
             expiration = cert.not_valid_after.replace(tzinfo=timezone.utc)
+        from datetime import datetime
+        now = datetime.now(timezone.utc)
+        days_left = (expiration - now).days
         return {
             "path": str(ca_path),
-            "expiration": expiration.strftime("%Y-%m-%d %H:%M:%S")
+            "expiration": expiration.strftime("%Y-%m-%d %H:%M:%S"),
+            "days_left": days_left,
         }
     except Exception as e:
         return {"path": str(ca_path), "error": str(e)}
