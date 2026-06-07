@@ -173,10 +173,10 @@ def apply_for_certificate(cert_dir: Path) -> None:
 
     default_domains = str(cfg.get("default_domains", "localhost 127.0.0.1 ::1"))
     domains_input = Prompt.ask(
-        "[bold cyan]申请域名[/bold cyan][dim](输入 q 取消)[/dim]",
+        "[bold cyan]申请域名[/bold cyan][dim](输入0取消)[/dim]",
         default=default_domains,
     )
-    if domains_input.strip().lower() == "q":
+    if domains_input.strip().lower() == "0":
         return
     if not domains_input.strip():
         return
