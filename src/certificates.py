@@ -80,7 +80,7 @@ def list_certificates(cert_dir: Path) -> None:
     cfg = load_config()
     warn_yellow: int = cfg.get("warn_days_yellow", 30)
     warn_red: int    = cfg.get("warn_days_red", 7)
-    renew_days: int  = cfg.get("renew_days", 3650)
+    renew_days: int  = cfg.get("renew_days", 825)
 
     parsed_certs = get_parsed_certs(cert_dir)
     if not parsed_certs:
@@ -108,7 +108,6 @@ def list_certificates(cert_dir: Path) -> None:
             if c["days_left"] != 999999 else "N/A"
         )
         table.add_row(str(idx), c["name"], c["domains"], exp_str, days_str)
-
     console.print(table)
 
     # 快速续期
@@ -155,14 +154,14 @@ def apply_for_certificate(cert_dir: Path) -> None:
     console.clear()
     console.print("\n[bold]请输入要申请证书的域名：[/bold]")
     console.print("[dim]例如: example.local *.example.local 192.168.1.1[/dim]")
+    console.print("[dim]（直接回车返回主菜单）[/dim]")
 
     cfg = load_config()
-    default_domains: str = cfg.get("default_domains", "localhost 127.0.0.1 ::1")
 
-    domains_input = Prompt.ask("域名列表", default=default_domains)
-    domains = domains_input.split()
-    if not domains:
+    domains_input = Prompt.ask("域名列表")
+    if not domains_input.strip():
         return
+    domains = domains_input.split()
 
     args: list[str] = []
     if Confirm.ask("是否需要自定义证书信息（组织、有效期等）？", default=False):
@@ -199,4 +198,3 @@ def apply_for_certificate(cert_dir: Path) -> None:
         console.print(table)
     else:
         console.print("[bold red]❌ 申请失败。[/bold red]")
-
