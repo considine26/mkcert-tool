@@ -75,7 +75,7 @@ def get_parsed_certs(cert_dir: Path) -> list[dict]:
 def list_certificates(cert_dir: Path) -> None:
     """展示证书列表（按到期时间排序），并提供快速续期入口"""
     console.clear()
-    console.print("\n[bold cyan]📜 已有证书一览 (按到期时间排序)[/bold cyan]")
+    console.print("\n[bold cyan]📜 已有证书一览(按到期时间排序)[/bold cyan]")
 
     cfg = load_config()
     warn_yellow: int = cfg.get("warn_days_yellow", 30)
@@ -84,12 +84,12 @@ def list_certificates(cert_dir: Path) -> None:
 
     parsed_certs = get_parsed_certs(cert_dir)
     if not parsed_certs:
-        console.print("[dim]  ( 暂无证书记录 )[/dim]")
+        console.print("[dim](暂无证书记录)[/dim]")
         return
 
     table = Table(show_header=True, header_style="bold magenta", box=None)
     table.add_column("#",     style="dim", justify="center")
-    table.add_column("证书文件", style="blue")
+    table.add_column("证书文件", style="cyan")
     table.add_column("包含域名",  style="white")
     table.add_column("过期时间",  style="green")
     table.add_column("剩余天数",  justify="right")
@@ -112,7 +112,7 @@ def list_certificates(cert_dir: Path) -> None:
 
     # 快速续期
     renew_idx = Prompt.ask(
-        f"\n输入[bold cyan]序号[/bold cyan]快速续期(默认[bold cyan]{renew_days}[/bold cyan]天)"
+        f"\n输入[bold cyan]序号[/bold cyan]快速续期(默认[bold cyan]{renew_days}[/bold cyan]天)回车结束查看"
     )
     if not renew_idx or not renew_idx.isdigit():
         return
@@ -143,7 +143,7 @@ def list_certificates(cert_dir: Path) -> None:
 
     if output:
         console.print(
-            f"[bold green]✓ {target['name']} 续期成功！新有效期为 {renew_days} 天。[/bold green]"
+            f"[bold green]✓ {target['name']} 续期成功！新有效期为{renew_days}天。[/bold green]"
         )
     else:
         console.print("[bold red]❌ 续期失败。[/bold red]")
@@ -152,13 +152,11 @@ def list_certificates(cert_dir: Path) -> None:
 def apply_for_certificate(cert_dir: Path) -> None:
     """交互式申请新域名证书"""
     console.clear()
-    console.print("\n[bold]请输入要申请证书的域名：[/bold]")
-    console.print("[dim]例如: example.local *.example.local 192.168.1.1[/dim]")
-    console.print("[dim]（直接回车返回主菜单）[/dim]")
+    console.print("\n[bold cyan]域名输入示例：[/bold cyan]localhost 127.0.0.1 ::1")
 
     cfg = load_config()
 
-    domains_input = Prompt.ask("域名列表")
+    domains_input = Prompt.ask("[bold cyan]申请域名[/bold cyan][dim](回车结束申请)[/dim]")
     if not domains_input.strip():
         return
     domains = domains_input.split()

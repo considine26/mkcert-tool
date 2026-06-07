@@ -32,7 +32,7 @@ def main() -> None:
         ca_info = get_ca_info()
 
         console.clear()
-        header = "[bold bright_cyan]🛡️  Mkcert 增强版证书工具[/bold bright_cyan]\n"
+        header = "[bold bright_cyan]🛡️  Mkcert增强版证书工具[/bold bright_cyan]\n"
         info_table_rows = []
 
         from rich.table import Table
@@ -48,12 +48,12 @@ def main() -> None:
                 day_style = 'bold red'
             exp_display  = f"[green]{exp_str}[/green] "
             exp_display += f"[{day_style}](剩余{days}天)[/{day_style}]"
-            info_table.add_row("[dim]CA 根证书:[/dim]",   f"{ca_info['path']}")
-            info_table.add_row("[dim]CA 有效期:[/dim]", exp_display)
+            info_table.add_row("[dim]CA根证书:[/dim]",   f"{ca_info['path']}")
+            info_table.add_row("[dim]CA有效期:[/dim]", exp_display)
         else:
-            info_table.add_row("[dim]CA 状态:[/dim]", "[bold yellow]尚未安装或未检测到根证书[/bold yellow]")
+            info_table.add_row("[dim]CA根证书:[/dim]", "[bold yellow]尚未安装或未检测到根证书[/bold yellow]")
 
-        info_table.add_row("[dim]cert 输出:[/dim]", f"{cert_dir.absolute()}")
+        info_table.add_row("[dim]域名证书:[/dim]", f"{cert_dir.absolute()}")
 
         console.print(Panel(
             Group(header, info_table),
@@ -63,17 +63,17 @@ def main() -> None:
 
         if not ca_info:
             console.print(Panel(
-                "[bold yellow]⚠ 未检测到本地根证书 (CA)[/bold yellow]\n"
+                "[bold yellow]⚠ 未检测到本地根证书(CA)[/bold yellow]\n"
                 "[dim]这会导致浏览器显示证书不受信任。"
-                "请选择下方的 [bold cyan]R[/bold cyan] 键来安装或自定义您的根证书。[/dim]",
+                "请选择下方的[bold cyan]R[/bold cyan]键来安装或自定义您的根证书。[/dim]",
                 border_style="yellow",
                 expand=False
             ))
 
         console.print("\n[bold cyan]请选择功能：[/bold cyan]")
         console.print(" [bold cyan]1.[/bold cyan] 🆕 [bold]申请证书[/bold] [dim]生成新域名证书[/dim]")
-        console.print(" [bold cyan]2.[/bold cyan] 📜 [bold]证书一览[/bold] [dim]查看/续期证书[/dim]")
-        console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold]  [dim]安装/自定义根证书[/dim]")
+        console.print(" [bold cyan]2.[/bold cyan] 📜 [bold]证书一览[/bold] [dim]查看/续期域名证书[/dim]")
+        console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold]  [dim]申请CA根证书[/dim]")
         console.print(" [bold cyan]0.[/bold cyan] ❌ [bold]退出脚本[/bold]")
 
         choice = Prompt.ask(

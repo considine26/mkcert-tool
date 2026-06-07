@@ -63,7 +63,8 @@ def apply_for_ca() -> None:
             "[bold red]⚠ 警告：检测到系统中已存在有效的根证书 (CA)！[/bold red]\n"
             "[dim]重新申请 CA 将会生成新的密钥对，导致您之前申请的所有域名证书全部失效。\n"
             "除非您确定需要更换根证书，否则不建议进行此操作。[/dim]",
-            border_style="red"
+            border_style="red", 
+            expand=False
         ))
         if not Confirm.ask(
             "[bold red]确定要覆盖现有的根证书并重新申请吗？[/bold red]",
@@ -84,10 +85,10 @@ def apply_for_ca() -> None:
 
     # 自定义 CA 信息
     user_config = load_config()
-    org  = Prompt.ask("输入 [bold]组织名称[/bold] (ca-org)",       default=user_config.get("ca-org", "Local CA"))
-    unit = Prompt.ask("输入 [bold]组织部门[/bold] (ca-orgUnit)",   default=user_config.get("ca-orgUnit", "Development"))
-    cn   = Prompt.ask("输入 [bold]通用名称[/bold] (ca-commonName)", default=user_config.get("ca-commonName", "mkcert root CA"))
-    years = Prompt.ask("输入 [bold]有效期（年）[/bold] (ca-years)",  default=user_config.get("ca-years", "10"))
+    org  = Prompt.ask("[bold]组织名称[/bold](ca-org)",       default=user_config.get("ca-org", "Local CA"))
+    unit = Prompt.ask("[bold]组织部门[/bold](ca-orgUnit)",   default=user_config.get("ca-orgUnit", "Development"))
+    cn   = Prompt.ask("[bold]通用名称[/bold](ca-commonName)", default=user_config.get("ca-commonName", "mkcert root CA"))
+    years = Prompt.ask("[bold]有效期（年）[/bold](ca-years)",  default=user_config.get("ca-years", "10"))
 
     # 持久化用户输入
     user_config.update({"ca-org": org, "ca-orgUnit": unit, "ca-commonName": cn, "ca-years": years})
@@ -107,7 +108,7 @@ def apply_for_ca() -> None:
     if output:
         console.print(Panel(
             f"[bold green]✨ 自定义 CA 申请成功！[/bold green]\n"
-            f"[dim]有效期: {years} 年[/dim]",
+            f"[dim]有效期:{years}年[/dim]",
             border_style="green",
             expand=False
         ))
