@@ -1,7 +1,7 @@
 """
 mkcert_runner.py - mkcert 可执行文件调用封装
 优先读取 config.ini 中的 mkcert_path，
-未配置时自动在项目根目录和系统 PATH 中查找。
+未配置时自动在项目目录、bin 目录和系统 PATH 中查找。
 """
 
 import sys
@@ -20,8 +20,8 @@ def _find_mkcert() -> Path:
     """
     按优先级查找 mkcert 可执行文件：
 
-    1. config.ini 中显式配置的 mkcert_path（必须存在，否则直接报错）
-    2. 项目根目录下的 mkcert(.exe)
+    1. config.ini 中显式配置的 mkcert_path（相对路径按项目根目录解析）
+    2. 项目根目录 / bin 目录下的 mkcert(.exe)
     3. 系统 PATH 中的 mkcert
 
     全部未找到则打印错误信息并以 exit(1) 终止。
@@ -32,17 +32,19 @@ def _find_mkcert() -> Path:
     # 1. 显式配置路径
     if configured:
         p = Path(configured)
+        if not p.is_absolute():
+            p = _BASE_PATH / p
         if p.is_file():
             return p
         console.print(f"[bold red]错误:[/bold red] config.ini 中 mkcert_path 指向的文件不存在：")
-        console.print(f"[dim]{configured}[/dim]")
+        console.print(f"[dim]{p}[/dim]")
         sys.exit(1)
 
-    # 2. 项目根目录
+    # 2. 项目目录 / bin 目录
     exe_name = "mkcert.exe" if sys.platform == "win32" else "mkcert"
-    local_exe = _BASE_PATH / exe_name
-    if local_exe.exists():
-        return local_exe
+    for local_exe in (_BASE_PATH / exe_name, _BASE_PATH / "bin" / exe_name):
+        if local_exe.is_file():
+            return local_exe
 
     # 3. 系统 PATH
     path_exe = shutil.which("mkcert")
@@ -74,6 +76,7 @@ def run_mkcert(args: list[str]) -> str | None:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=True,
         )
         return result.stdout.strip() + result.stderr.strip()

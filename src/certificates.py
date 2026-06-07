@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.panel import Panel
-from rich.prompt import Prompt, Confirm, IntPrompt
+from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -17,6 +17,17 @@ from cryptography.hazmat.backends import default_backend
 from .ui import console
 from .config import load_config, save_config
 from .mkcert_runner import run_mkcert
+from .validators import prompt_positive_int
+
+
+def _get_san_names(cert: x509.Certificate) -> list[str]:
+    """提取证书 SAN 中的 DNS 与 IP 条目，保持 mkcert 续期所需格式。"""
+    ext = cert.extensions.get_extension_for_oid(
+        x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+    )
+    names = ext.value.get_values_for_type(x509.DNSName)
+    names.extend(str(ip) for ip in ext.value.get_values_for_type(x509.IPAddress))
+    return names
 
 
 def get_parsed_certs(cert_dir: Path) -> list[dict]:
@@ -39,11 +50,10 @@ def get_parsed_certs(cert_dir: Path) -> list[dict]:
             cert = x509.load_pem_x509_certificate(cert_data, default_backend())
 
             try:
-                ext = cert.extensions.get_extension_for_oid(
-                    x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
-                )
-                domains = ", ".join(ext.value.get_values_for_type(x509.DNSName))
+                san_names = _get_san_names(cert)
+                domains = ", ".join(san_names) if san_names else "N/A"
             except Exception:
+                san_names = []
                 domains = "N/A"
 
             try:
@@ -56,6 +66,7 @@ def get_parsed_certs(cert_dir: Path) -> list[dict]:
                 "path": cert_path,
                 "name": cert_path.name,
                 "domains": domains,
+                "san_names": san_names,
                 "expiration": expiration,
                 "days_left": days_left,
             })
@@ -64,6 +75,7 @@ def get_parsed_certs(cert_dir: Path) -> list[dict]:
                 "path": cert_path,
                 "name": cert_path.name,
                 "domains": "[red]解析失败[/red]",
+                "san_names": [],
                 "expiration": datetime.max.replace(tzinfo=timezone.utc),
                 "days_left": 999999,
             })
@@ -80,7 +92,7 @@ def list_certificates(cert_dir: Path) -> None:
     cfg = load_config()
     warn_yellow: int = cfg.get("warn_days_yellow", 30)
     warn_red: int    = cfg.get("warn_days_red", 7)
-    renew_days: int  = cfg.get("renew_days", 825)
+    renew_days = int(cfg.get("renew_days", 825))
 
     parsed_certs = get_parsed_certs(cert_dir)
     if not parsed_certs:
@@ -127,7 +139,10 @@ def list_certificates(cert_dir: Path) -> None:
         console.print("[red]错误：无法对解析失败的证书进行续期。[/red]")
         return
 
-    domains = [d.strip() for d in target["domains"].split(",")]
+    domains = target["san_names"]
+    if not domains:
+        console.print("[red]错误：无法读取证书域名，不能续期。[/red]")
+        return
     cert_file = target["path"]
     key_file  = cert_file.parent / cert_file.name.replace(".pem", "-key.pem")
 
@@ -156,7 +171,13 @@ def apply_for_certificate(cert_dir: Path) -> None:
 
     cfg = load_config()
 
-    domains_input = Prompt.ask("[bold cyan]申请域名[/bold cyan][dim](回车结束申请)[/dim]")
+    default_domains = str(cfg.get("default_domains", "localhost 127.0.0.1 ::1"))
+    domains_input = Prompt.ask(
+        "[bold cyan]申请域名[/bold cyan][dim](输入 q 取消)[/dim]",
+        default=default_domains,
+    )
+    if domains_input.strip().lower() == "q":
+        return
     if not domains_input.strip():
         return
     domains = domains_input.split()
@@ -166,7 +187,10 @@ def apply_for_certificate(cert_dir: Path) -> None:
         org  = Prompt.ask("输入 [bold]组织名称[/bold] (cert-org)",    default=cfg.get("cert-org", "Local Cert"))
         unit = Prompt.ask("输入 [bold]组织部门[/bold] (cert-orgUnit)", default=cfg.get("cert-orgUnit", "Web Server"))
         cn   = Prompt.ask("输入 [bold]通用名称[/bold] (cert-commonName)", default=domains[0])
-        days = Prompt.ask("输入 [bold]有效天数[/bold] (cert-days)",  default=str(cfg.get("cert-days", "825")))
+        days = prompt_positive_int(
+            "输入 [bold]有效天数[/bold] (cert-days)",
+            default=cfg.get("cert-days", "825"),
+        )
 
         cfg.update({"cert-org": org, "cert-orgUnit": unit, "cert-days": days})
         save_config(cfg)

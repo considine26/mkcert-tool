@@ -123,11 +123,8 @@ def save_config(config: dict) -> None:
             parser.add_section(section)
         parser.set(section, key, str(value))
 
-    try:
-        with CONFIG_FILE.open("w", encoding="utf-8") as f:
-            parser.write(f)
-    except Exception:
-        pass
+    with CONFIG_FILE.open("w", encoding="utf-8") as f:
+        parser.write(f)
 
 
 def ensure_config_file() -> None:
@@ -190,7 +187,4 @@ renew_days = 825
 # 界面语言（预留字段，当前仅支持 zh-CN）
 language = zh-CN
 """
-    try:
-        CONFIG_FILE.write_text(template, encoding="utf-8")
-    except Exception:
-        pass
+    CONFIG_FILE.write_text(template, encoding="utf-8")
