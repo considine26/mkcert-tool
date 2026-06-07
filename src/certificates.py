@@ -3,7 +3,6 @@ certificates.py - 证书相关操作
     - get_parsed_certs()       解析目录下所有证书并排序
     - list_certificates()      展示证书列表 + 快速续期
     - apply_for_certificate()  交互式申请新证书
-    - cleanup_certificates()   证书清理工具
 """
 
 from datetime import datetime, timezone
@@ -201,68 +200,3 @@ def apply_for_certificate(cert_dir: Path) -> None:
     else:
         console.print("[bold red]❌ 申请失败。[/bold red]")
 
-
-def cleanup_certificates(cert_dir: Path) -> None:
-    """证书清理工具：自动清理过期证书 / 手动选择删除"""
-    while True:
-        console.clear()
-        console.print("\n[bold red]🧹 证书清理工具[/bold red]")
-        console.print(" [1] 自动清理过期证书")
-        console.print(" [2] 手动选择删除证书")
-        console.print(" [0] 返回主菜单")
-
-        choice = IntPrompt.ask("\n请选择清理方式", choices=["0", "1", "2"], default=0)
-        if choice == 0:
-            break
-
-        parsed_certs = get_parsed_certs(cert_dir)
-        if not parsed_certs:
-            console.print("[dim]  ( 暂无证书记录 )[/dim]")
-            break
-
-        if choice == 1:
-            expired = [c for c in parsed_certs if c["days_left"] < 0]
-            if not expired:
-                console.print("[green]没有发现已过期的证书。[/green]")
-                continue
-
-            if Confirm.ask(
-                f"发现 [bold red]{len(expired)}[/bold red] 个过期证书，确认全部删除吗？",
-                default=False
-            ):
-                for c in expired:
-                    try:
-                        c["path"].unlink()
-                        key_p = c["path"].parent / c["name"].replace(".pem", "-key.pem")
-                        if key_p.exists():
-                            key_p.unlink()
-                        console.print(f"[dim]已删除: {c['name']}[/dim]")
-                    except Exception as e:
-                        console.print(f"[red]删除 {c['name']} 失败: {e}[/red]")
-                console.print("[bold green]过期清理完成。[/bold green]")
-
-        elif choice == 2:
-            table = Table(show_header=True, header_style="bold magenta", box=None)
-            table.add_column("序号",     style="dim")
-            table.add_column("证书文件名", style="blue")
-            table.add_column("剩余天数",  justify="right")
-            for idx, c in enumerate(parsed_certs, 1):
-                table.add_row(str(idx), c["name"], f"{c['days_left']} 天")
-            console.print(table)
-
-            del_idx = Prompt.ask("\n请输入要删除的证书 [bold red]序号[/bold red] (多个用空格，回车取消)")
-            if not del_idx:
-                continue
-
-            indices = [int(i) - 1 for i in del_idx.split() if i.isdigit()]
-            for idx in indices:
-                if 0 <= idx < len(parsed_certs):
-                    c = parsed_certs[idx]
-                    try:
-                        c["path"].unlink()
-                        key_p = c["path"].parent / c["name"].replace(".pem", "-key.pem")
-                        if key_p.exists():
-                            key_p.unlink()
-                        console.print(f"[green]已删除: {c['name']}[/green]")
-                    except Exception as e:
-                        console.print(f"[red]删除失败: {e}[/red]")

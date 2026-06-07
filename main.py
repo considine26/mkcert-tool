@@ -13,9 +13,8 @@ from src.ui import console
 from src.config import load_config, ensure_config_file
 from src.ca import get_ca_info, apply_for_ca
 from src.certificates import (
-    list_certificates,
     apply_for_certificate,
-    cleanup_certificates,
+    list_certificates,
 )
 
 
@@ -74,30 +73,26 @@ def main() -> None:
             ))
 
         console.print("\n[bold]请选择功能：[/bold]")
-        console.print(" [bold cyan]1.[/bold cyan] 📜 [bold]证书一览[/bold] (查看/续期证书)")
-        console.print(" [bold cyan]2.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新域名证书)")
-        console.print(" [bold cyan]D.[/bold cyan] 🧹 [bold]清理证书[/bold] (过期清理/手动删除)")
+        console.print(" [bold cyan]1.[/bold cyan] 🆕 [bold]申请证书[/bold] (生成新域名证书)")
+        console.print(" [bold cyan]2.[/bold cyan] 📜 [bold]证书一览[/bold] (查看/续期证书)")
         console.print(" [bold cyan]R.[/bold cyan] 🔑 [bold]申请 CA[/bold]  (安装/自定义根证书)")
         console.print(" [bold cyan]0.[/bold cyan] ❌ [bold]退出脚本[/bold]")
 
         choice = Prompt.ask(
-            "\n输入选项序号/字母 [bold cyan](1/2/D/R/0)[/bold cyan]",
-            choices=["1", "2", "D", "d", "R", "r", "0"],
+            "\n输入选项序号/字母 [bold cyan](1/2/R/0)[/bold cyan]",
+            choices=["1", "2", "R", "r", "0"],
             show_choices=False,
-            default="2"
+            default="1"
         ).upper()
 
         if choice == "1":
-            list_certificates(cert_dir)
+            apply_for_certificate(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
         elif choice == "2":
-            apply_for_certificate(cert_dir)
+            list_certificates(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
         elif choice == "R":
             apply_for_ca()
-            Prompt.ask("\n按回车键返回主菜单")
-        elif choice == "D":
-            cleanup_certificates(cert_dir)
             Prompt.ask("\n按回车键返回主菜单")
         elif choice == "0":
             console.print("[yellow]已退出，祝您生活愉快！[/yellow]")
