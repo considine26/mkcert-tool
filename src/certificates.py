@@ -44,6 +44,20 @@ def _ensure_inside_directory(base_dir: Path, target: Path) -> Path:
     return resolved_target
 
 
+def _dedupe_domains(domains: list[str]) -> tuple[list[str], list[str]]:
+    """按输入顺序去重域名，返回去重结果和被移除的重复项。"""
+    seen: set[str] = set()
+    unique_domains: list[str] = []
+    duplicates: list[str] = []
+    for domain in domains:
+        if domain in seen:
+            duplicates.append(domain)
+            continue
+        seen.add(domain)
+        unique_domains.append(domain)
+    return unique_domains, duplicates
+
+
 def get_parsed_certs(cert_dir: Path) -> list[dict]:
     """
     解析 cert_dir 目录中所有非私钥、非 rootCA 的 .pem 文件，
@@ -251,7 +265,12 @@ def apply_for_certificate(cert_dir: Path) -> None:
         return
     if not domains_input.strip():
         return
-    domains = domains_input.split()
+    domains, duplicates = _dedupe_domains(domains_input.split())
+    if duplicates:
+        console.print(
+            "[yellow]已忽略重复域名：[/yellow]"
+            f"[dim]{', '.join(duplicates)}[/dim]"
+        )
 
     args: list[str] = []
     if Confirm.ask("是否需要自定义证书信息（组织、有效期等）？", default=False):
@@ -276,6 +295,16 @@ def apply_for_certificate(cert_dir: Path) -> None:
     safe_name = domains[0].replace("*", "wildcard").replace(".", "_")
     cert_file = cert_dir / f"{safe_name}.pem"
     key_file  = cert_dir / f"{safe_name}-key.pem"
+
+    existing_files = [file_path for file_path in (cert_file, key_file) if file_path.exists()]
+    if existing_files:
+        console.print("\n[bold yellow]检测到同名证书文件已存在：[/bold yellow]")
+        for file_path in existing_files:
+            console.print(f"  [cyan]{file_path.absolute()}[/cyan]")
+        console.print("[dim]继续申请会覆盖旧证书/私钥，相关本地服务可能需要重载证书。[/dim]")
+        if not Confirm.ask("[bold yellow]确认覆盖吗？[/bold yellow]", default=False):
+            console.print("[yellow]已取消申请，现有证书未受影响。[/yellow]")
+            return
 
     args.extend(["-cert-file", str(cert_file), "-key-file", str(key_file)])
     args.extend(domains)
