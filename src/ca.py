@@ -15,7 +15,9 @@ from cryptography.hazmat.backends import default_backend
 
 from .ui import console
 from .config import load_config, save_config
+from .logger import log_event
 from .mkcert_runner import run_mkcert
+from .validators import prompt_positive_int
 
 
 def get_ca_info() -> dict | None:
@@ -71,6 +73,7 @@ def apply_for_ca() -> None:
             default=False
         ):
             console.print("[yellow]已取消操作，现有 CA 未受影响。[/yellow]")
+            log_event("issue_ca", "cancelled existing CA overwrite", ca_path=current_ca.get("path"))
             return
 
     console.print("\n[bold yellow]🛡️  申请根证书 CA[/bold yellow]")
@@ -81,6 +84,9 @@ def apply_for_ca() -> None:
             output = run_mkcert(["-install"])
         if output:
             console.print("[bold green]✓ 默认 CA 已成功安装！[/bold green]")
+            log_event("issue_ca", "default install success")
+        else:
+            log_event("issue_ca", "default install failed")
         return
 
     # 自定义 CA 信息
@@ -88,7 +94,10 @@ def apply_for_ca() -> None:
     org  = Prompt.ask("[bold]组织名称[/bold](ca-org)",       default=user_config.get("ca-org", "Local CA"))
     unit = Prompt.ask("[bold]组织部门[/bold](ca-orgUnit)",   default=user_config.get("ca-orgUnit", "Development"))
     cn   = Prompt.ask("[bold]通用名称[/bold](ca-commonName)", default=user_config.get("ca-commonName", "mkcert root CA"))
-    years = Prompt.ask("[bold]有效期（年）[/bold](ca-years)",  default=user_config.get("ca-years", "10"))
+    years = prompt_positive_int(
+        "[bold]有效期（年）[/bold](ca-years)",
+        default=user_config.get("ca-years", "10"),
+    )
 
     # 持久化用户输入
     user_config.update({"ca-org": org, "ca-orgUnit": unit, "ca-commonName": cn, "ca-years": years})
@@ -112,6 +121,14 @@ def apply_for_ca() -> None:
             border_style="green",
             expand=False
         ))
+        log_event(
+            "issue_ca",
+            "custom install success",
+            ca_org=org,
+            ca_orgUnit=unit,
+            ca_commonName=cn,
+            ca_years=years,
+        )
 
         # 刷新 CA 信息以获取最新路径
         ca_info = get_ca_info()
@@ -124,3 +141,12 @@ def apply_for_ca() -> None:
             "[dim]   - Android/iOS: 发送到手机后在设置中搜索「加密与凭据」或「描述文件」进行安装[/dim]"
         )
         console.print(Panel(tips_group, border_style="bright_blue", expand=False))
+    else:
+        log_event(
+            "issue_ca",
+            "custom install failed",
+            ca_org=org,
+            ca_orgUnit=unit,
+            ca_commonName=cn,
+            ca_years=years,
+        )
