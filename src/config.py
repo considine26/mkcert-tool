@@ -9,6 +9,8 @@ config.py - 配置文件管理
 """
 
 import configparser
+import shutil
+import sys
 from pathlib import Path
 
 # 配置文件位于项目根目录
@@ -23,6 +25,7 @@ DEFAULT_CONFIG: dict = {
     # [paths]
     "cert_output_dir": "certs",
     "mkcert_path":     "",             # 留空则自动发现
+    "log_file":        "logs/mkcert.log",
 
     # [ca]
     "ca-org":         "Local CA",
@@ -51,6 +54,7 @@ DEFAULT_CONFIG: dict = {
 _SECTION_MAP: dict[str, str] = {
     "cert_output_dir":   "paths",
     "mkcert_path":       "paths",
+    "log_file":          "paths",
     "ca-org":            "ca",
     "ca-orgUnit":        "ca",
     "ca-commonName":     "ca",
@@ -67,6 +71,14 @@ _SECTION_MAP: dict[str, str] = {
 
 # 数值型字段（读取时自动转换为 int）
 _INT_FIELDS = {"warn_days_yellow", "warn_days_red", "renew_days"}
+
+
+def resolve_project_path(path_value: str | Path) -> Path:
+    """将配置路径解析为绝对路径；相对路径按项目根目录解析。"""
+    path = Path(str(path_value).strip())
+    if path.is_absolute():
+        return path
+    return _BASE_PATH / path
 
 
 def _make_parser() -> configparser.ConfigParser:
@@ -102,6 +114,62 @@ def load_config() -> dict:
                     merged[key] = value
 
     return merged
+
+
+def validate_config(config: dict) -> list[str]:
+    """校验启动所需配置，返回错误列表。"""
+    errors: list[str] = []
+
+    positive_int_fields = ("ca-years", "cert-days", "warn_days_yellow", "warn_days_red", "renew_days")
+    for key in positive_int_fields:
+        value = config.get(key)
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            errors.append(f"{key} 必须是正整数，当前值：{value!r}")
+            continue
+        if number <= 0:
+            errors.append(f"{key} 必须大于 0，当前值：{value!r}")
+
+    try:
+        warn_yellow = int(config.get("warn_days_yellow"))
+        warn_red = int(config.get("warn_days_red"))
+        if warn_red > warn_yellow:
+            errors.append("warn_days_red 不应大于 warn_days_yellow")
+    except (TypeError, ValueError):
+        pass
+
+    cert_output_dir = str(config.get("cert_output_dir", "")).strip()
+    if not cert_output_dir:
+        errors.append("cert_output_dir 不能为空")
+
+    log_file = str(config.get("log_file", "")).strip()
+    if not log_file:
+        errors.append("log_file 不能为空")
+
+    default_domains = str(config.get("default_domains", "")).split()
+    if not default_domains:
+        errors.append("default_domains 至少需要包含一个域名或 IP")
+
+    configured_mkcert = str(config.get("mkcert_path", "")).strip()
+    if configured_mkcert:
+        mkcert_path = resolve_project_path(configured_mkcert)
+        if not mkcert_path.is_file():
+            errors.append(f"mkcert_path 指向的文件不存在：{mkcert_path}")
+    else:
+        exe_name = "mkcert.exe" if sys.platform == "win32" else "mkcert"
+        local_candidates = (
+            _BASE_PATH / exe_name,
+            _BASE_PATH / "bin" / exe_name,
+        )
+        if not any(candidate.is_file() for candidate in local_candidates) and not shutil.which("mkcert"):
+            errors.append("未找到 mkcert 可执行文件，请配置 mkcert_path 或将 mkcert 放入项目根目录/bin/PATH")
+
+    language = str(config.get("language", "")).strip()
+    if language != "zh-CN":
+        errors.append("language 当前仅支持 zh-CN")
+
+    return errors
 
 
 def save_config(config: dict) -> None:
@@ -149,6 +217,8 @@ def _write_default_template() -> None:
 cert_output_dir = certs
 ; mkcert 可执行文件绝对路径（留空则自动发现：先找项目根目录，再找 PATH）
 mkcert_path =
+; 操作日志文件（相对于项目根目录）
+log_file = logs/mkcert.log
 
 [ca]
 # 根证书 CA 默认参数
@@ -165,7 +235,7 @@ ca-years      = 10
 # 域名证书默认参数
 cert-org      = Local Cert
 cert-orgUnit  = Web Server
-; cert-days : 证书有效天数。浏览器最多信任 825 天，建议不超过此值
+; cert-days : 证书有效天数。本地自签证书通常不受公网证书最长有效期规则直接限制
 cert-days     = 825
 
 # 申请证书时的预填域名，多个用空格分隔
@@ -180,7 +250,7 @@ warn_days_red    = 7
 
 [renewal]
 ; 快速续期时默认的新有效期（天）
-; 浏览器最多信任 825 天，建议不超过此值
+; 本地自签证书可按需设置较长有效期，团队共享时建议缩短
 renew_days = 825
 
 [ui]

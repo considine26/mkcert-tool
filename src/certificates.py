@@ -5,6 +5,7 @@ certificates.py - 证书相关操作
     - apply_for_certificate()  交互式申请新证书
 """
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from cryptography.hazmat.backends import default_backend
 
 from .ui import console
 from .config import load_config, save_config
+from .logger import log_event
 from .mkcert_runner import run_mkcert
 from .validators import prompt_positive_int
 
@@ -56,6 +58,43 @@ def _dedupe_domains(domains: list[str]) -> tuple[list[str], list[str]]:
         seen.add(domain)
         unique_domains.append(domain)
     return unique_domains, duplicates
+
+
+def _sanitize_cert_basename(value: str) -> str:
+    """将用户输入或域名转换为安全的证书文件名前缀。"""
+    name = value.strip()
+    if name.lower().endswith(".pem"):
+        name = name[:-4]
+    name = name.replace("*", "wildcard")
+    name = re.sub(r"[^A-Za-z0-9_-]+", "_", name)
+    name = re.sub(r"_+", "_", name).strip("_.-")
+    return name or "certificate"
+
+
+def _build_default_cert_basename(domains: list[str]) -> str:
+    """根据域名列表生成默认文件名前缀。"""
+    parts = [_sanitize_cert_basename(domain) for domain in domains[:3]]
+    if len(domains) > 3:
+        parts.append(f"and_{len(domains) - 3}_more")
+    return "_".join(parts) or "certificate"
+
+
+def _prompt_cert_basename(domains: list[str]) -> str:
+    """提示用户确认或自定义证书文件名前缀。"""
+    default_name = _build_default_cert_basename(domains)
+    while True:
+        raw_name = Prompt.ask(
+            "[bold cyan]证书文件名[/bold cyan][dim](不含 .pem，仅用于保存文件)[/dim]",
+            default=default_name,
+        )
+        safe_name = _sanitize_cert_basename(raw_name)
+        if "rootca" in safe_name.lower():
+            console.print("[red]证书文件名不能包含 rootCA。[/red]")
+            continue
+        raw_without_suffix = raw_name[:-4] if raw_name.lower().endswith(".pem") else raw_name
+        if safe_name != raw_without_suffix.strip():
+            console.print(f"[yellow]文件名已规范化为：[/yellow][cyan]{safe_name}[/cyan]")
+        return safe_name
 
 
 def get_parsed_certs(cert_dir: Path) -> list[dict]:
@@ -215,8 +254,24 @@ def _renew_certificate(target: dict, renew_days: int) -> None:
         console.print(
             f"[bold green]✓ {target['name']} 续期成功！新有效期为{renew_days}天。[/bold green]"
         )
+        log_event(
+            "renew_cert",
+            "success",
+            cert_file=cert_file,
+            key_file=key_file,
+            renew_days=renew_days,
+            domains=", ".join(domains),
+        )
     else:
         console.print("[bold red]❌ 续期失败。[/bold red]")
+        log_event(
+            "renew_cert",
+            "failed",
+            cert_file=cert_file,
+            key_file=key_file,
+            renew_days=renew_days,
+            domains=", ".join(domains),
+        )
 
 
 def _delete_certificate(cert_dir: Path, target: dict) -> None:
@@ -233,6 +288,7 @@ def _delete_certificate(cert_dir: Path, target: dict) -> None:
 
     if not Confirm.ask("[bold red]确认删除该证书及其私钥吗？[/bold red]", default=False):
         console.print("[yellow]已取消删除。[/yellow]")
+        log_event("delete_cert", "cancelled", cert_file=cert_file, key_file=key_file)
         return
 
     deleted: list[Path] = []
@@ -245,8 +301,14 @@ def _delete_certificate(cert_dir: Path, target: dict) -> None:
         console.print("[bold green]✓ 删除完成：[/bold green]")
         for file_path in deleted:
             console.print(f"  [dim]{file_path}[/dim]")
+        log_event(
+            "delete_cert",
+            "success",
+            files=", ".join(str(file_path) for file_path in deleted),
+        )
     else:
         console.print("[yellow]未找到可删除的文件。[/yellow]")
+        log_event("delete_cert", "no files found", cert_file=cert_file, key_file=key_file)
 
 
 def apply_for_certificate(cert_dir: Path) -> None:
@@ -292,7 +354,7 @@ def apply_for_certificate(cert_dir: Path) -> None:
             f"-cert-days={days}",
         ]
 
-    safe_name = domains[0].replace("*", "wildcard").replace(".", "_")
+    safe_name = _prompt_cert_basename(domains)
     cert_file = cert_dir / f"{safe_name}.pem"
     key_file  = cert_dir / f"{safe_name}-key.pem"
 
@@ -304,6 +366,13 @@ def apply_for_certificate(cert_dir: Path) -> None:
         console.print("[dim]继续申请会覆盖旧证书/私钥，相关本地服务可能需要重载证书。[/dim]")
         if not Confirm.ask("[bold yellow]确认覆盖吗？[/bold yellow]", default=False):
             console.print("[yellow]已取消申请，现有证书未受影响。[/yellow]")
+            log_event(
+                "issue_cert",
+                "cancelled overwrite",
+                cert_file=cert_file,
+                key_file=key_file,
+                domains=", ".join(domains),
+            )
             return
 
     args.extend(["-cert-file", str(cert_file), "-key-file", str(key_file)])
@@ -318,5 +387,19 @@ def apply_for_certificate(cert_dir: Path) -> None:
         table.add_row("[dim]证书文件:[/dim]", str(cert_file.absolute()))
         table.add_row("[dim]私钥文件:[/dim]", str(key_file.absolute()))
         console.print(table)
+        log_event(
+            "issue_cert",
+            "success",
+            cert_file=cert_file,
+            key_file=key_file,
+            domains=", ".join(domains),
+        )
     else:
         console.print("[bold red]❌ 申请失败。[/bold red]")
+        log_event(
+            "issue_cert",
+            "failed",
+            cert_file=cert_file,
+            key_file=key_file,
+            domains=", ".join(domains),
+        )
