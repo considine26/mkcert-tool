@@ -30,6 +30,20 @@ def _get_san_names(cert: x509.Certificate) -> list[str]:
     return names
 
 
+def _get_key_file(cert_file: Path) -> Path:
+    """根据证书文件名推导对应私钥文件名。"""
+    return cert_file.parent / cert_file.name.replace(".pem", "-key.pem")
+
+
+def _ensure_inside_directory(base_dir: Path, target: Path) -> Path:
+    """解析路径并确认目标仍位于指定目录内。"""
+    resolved_base = base_dir.resolve()
+    resolved_target = target.resolve(strict=False)
+    if not resolved_target.is_relative_to(resolved_base):
+        raise ValueError(f"拒绝操作目录外文件：{resolved_target}")
+    return resolved_target
+
+
 def get_parsed_certs(cert_dir: Path) -> list[dict]:
     """
     解析 cert_dir 目录中所有非私钥、非 rootCA 的 .pem 文件，
@@ -85,56 +99,82 @@ def get_parsed_certs(cert_dir: Path) -> list[dict]:
 
 
 def list_certificates(cert_dir: Path) -> None:
-    """展示证书列表（按到期时间排序），并提供快速续期入口"""
-    console.clear()
-    console.print("\n[bold cyan]📜 已有证书一览(按到期时间排序)[/bold cyan]")
+    """展示证书列表（按到期时间排序），并提供续期和删除入口"""
 
     cfg = load_config()
     warn_yellow: int = cfg.get("warn_days_yellow", 30)
     warn_red: int    = cfg.get("warn_days_red", 7)
     renew_days = int(cfg.get("renew_days", 825))
 
-    parsed_certs = get_parsed_certs(cert_dir)
-    if not parsed_certs:
-        console.print("[dim](暂无证书记录)[/dim]")
-        return
+    while True:
+        console.clear()
+        console.print("\n[bold cyan]📜 已有证书一览(按到期时间排序)[/bold cyan]")
 
-    table = Table(show_header=True, header_style="bold magenta", box=None)
-    table.add_column("#",     style="dim", justify="center")
-    table.add_column("证书文件", style="cyan")
-    table.add_column("包含域名",  style="white")
-    table.add_column("过期时间",  style="green")
-    table.add_column("剩余天数",  justify="right")
+        parsed_certs = get_parsed_certs(cert_dir)
+        if not parsed_certs:
+            console.print("[dim](暂无证书记录)[/dim]")
+            return
 
-    for idx, c in enumerate(parsed_certs, 1):
-        if c["days_left"] > warn_yellow:
-            day_style = "green"
-        elif c["days_left"] > warn_red:
-            day_style = "yellow"
-        else:
-            day_style = "bold red"
+        table = Table(show_header=True, header_style="bold magenta", box=None)
+        table.add_column("#",     style="dim", justify="center")
+        table.add_column("证书文件", style="cyan")
+        table.add_column("包含域名",  style="white")
+        table.add_column("过期时间",  style="green")
+        table.add_column("剩余天数",  justify="right")
 
-        exp_str  = c["expiration"].strftime("%Y-%m-%d") if c["days_left"] != 999999 else "N/A"
-        days_str = (
-            f"[{day_style}]{c['days_left']} 天[/{day_style}]"
-            if c["days_left"] != 999999 else "N/A"
+        for idx, c in enumerate(parsed_certs, 1):
+            if c["days_left"] > warn_yellow:
+                day_style = "green"
+            elif c["days_left"] > warn_red:
+                day_style = "yellow"
+            else:
+                day_style = "bold red"
+
+            exp_str  = c["expiration"].strftime("%Y-%m-%d") if c["days_left"] != 999999 else "N/A"
+            days_str = (
+                f"[{day_style}]{c['days_left']} 天[/{day_style}]"
+                if c["days_left"] != 999999 else "N/A"
+            )
+            table.add_row(str(idx), c["name"], c["domains"], exp_str, days_str)
+        console.print(table)
+
+        action = Prompt.ask(
+            f"\n输入[bold cyan]序号[/bold cyan]续期(默认[bold cyan]{renew_days}[/bold cyan]天)，"
+            "输入[bold red]del 序号[/bold red]删除，输入[bold cyan]0[/bold cyan]退出"
         )
-        table.add_row(str(idx), c["name"], c["domains"], exp_str, days_str)
-    console.print(table)
+        action = action.strip()
+        if action == "0":
+            return
+        if not action:
+            continue
 
-    # 快速续期
-    renew_idx = Prompt.ask(
-        f"\n输入[bold cyan]序号[/bold cyan]快速续期(默认[bold cyan]{renew_days}[/bold cyan]天)回车结束查看"
-    )
-    if not renew_idx or not renew_idx.isdigit():
-        return
+        parts = action.split()
+        if len(parts) == 2 and parts[0].lower() == "del" and parts[1].isdigit():
+            idx = int(parts[1]) - 1
+            if not (0 <= idx < len(parsed_certs)):
+                console.print("[red]无效的序号。[/red]")
+                Prompt.ask("\n按回车键继续")
+                continue
+            _delete_certificate(cert_dir, parsed_certs[idx])
+            Prompt.ask("\n按回车键继续")
+            continue
 
-    idx = int(renew_idx) - 1
-    if not (0 <= idx < len(parsed_certs)):
-        console.print("[red]无效的序号。[/red]")
-        return
+        if action.isdigit():
+            idx = int(action) - 1
+            if not (0 <= idx < len(parsed_certs)):
+                console.print("[red]无效的序号。[/red]")
+                Prompt.ask("\n按回车键继续")
+                continue
+            _renew_certificate(parsed_certs[idx], renew_days)
+            Prompt.ask("\n按回车键继续")
+            continue
 
-    target = parsed_certs[idx]
+        console.print("[red]无效输入。请输入序号、del 序号或 0。[/red]")
+        Prompt.ask("\n按回车键继续")
+
+
+def _renew_certificate(target: dict, renew_days: int) -> None:
+    """按证书 SAN 快速续期指定证书。"""
     if target["days_left"] == 999999:
         console.print("[red]错误：无法对解析失败的证书进行续期。[/red]")
         return
@@ -143,8 +183,9 @@ def list_certificates(cert_dir: Path) -> None:
     if not domains:
         console.print("[red]错误：无法读取证书域名，不能续期。[/red]")
         return
+
     cert_file = target["path"]
-    key_file  = cert_file.parent / cert_file.name.replace(".pem", "-key.pem")
+    key_file = _get_key_file(cert_file)
 
     console.print(f"\n[bold magenta]正在为 {target['name']} 进行续期...[/bold magenta]")
     args = [
@@ -162,6 +203,36 @@ def list_certificates(cert_dir: Path) -> None:
         )
     else:
         console.print("[bold red]❌ 续期失败。[/bold red]")
+
+
+def _delete_certificate(cert_dir: Path, target: dict) -> None:
+    """删除证书文件和对应私钥文件，操作限制在证书目录内。"""
+    cert_file = _ensure_inside_directory(cert_dir, target["path"])
+    key_file = _ensure_inside_directory(cert_dir, _get_key_file(target["path"]))
+
+    console.print("\n[bold red]将删除以下文件：[/bold red]")
+    console.print(f"  [cyan]{cert_file}[/cyan]")
+    if key_file.exists():
+        console.print(f"  [cyan]{key_file}[/cyan]")
+    else:
+        console.print(f"  [dim]{key_file} (不存在，跳过)[/dim]")
+
+    if not Confirm.ask("[bold red]确认删除该证书及其私钥吗？[/bold red]", default=False):
+        console.print("[yellow]已取消删除。[/yellow]")
+        return
+
+    deleted: list[Path] = []
+    for file_path in (cert_file, key_file):
+        if file_path.exists():
+            file_path.unlink()
+            deleted.append(file_path)
+
+    if deleted:
+        console.print("[bold green]✓ 删除完成：[/bold green]")
+        for file_path in deleted:
+            console.print(f"  [dim]{file_path}[/dim]")
+    else:
+        console.print("[yellow]未找到可删除的文件。[/yellow]")
 
 
 def apply_for_certificate(cert_dir: Path) -> None:

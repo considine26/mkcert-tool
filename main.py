@@ -88,7 +88,6 @@ def main() -> None:
             Prompt.ask("\n按回车键返回主菜单")
         elif choice == "2":
             list_certificates(cert_dir)
-            Prompt.ask("\n按回车键返回主菜单")
         elif choice == "R":
             apply_for_ca()
             Prompt.ask("\n按回车键返回主菜单")
